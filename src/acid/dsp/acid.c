@@ -523,7 +523,7 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
     t->root = 9; /* A, matches tb3po's default */
     t->live_transpose = 0;
     t->scale = 0;
-    t->blend = 0;
+    t->blend = -63; /* Seq A alone until Blend is dialled up */
     t->reset_bars_idx = 4; /* Off */
     t->bpm = 120.0f;
     t->running = 0;
@@ -843,7 +843,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\"],\"default\":0},"
             "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
             "{\"key\":\"seq_b_enable\",\"name\":\"Seq B\",\"type\":\"enum\",\"options\":[\"off\",\"on\"],\"default\":1},"
-            "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":0},"
+            "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":-63},"
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4}"

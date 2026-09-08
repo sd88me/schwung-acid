@@ -28,7 +28,8 @@ project (`claude/acid-seq-design.md`).
   target velocity, so each sequence's accent/normal-note ratio — a defining
   feature of acid lines — stays intact no matter where the knob sits: −63 =
   A at 100% / B at 0%, centre = both at 100%, +64 = A at 0% / B at 100%,
-  with the opposing side ramping linearly between. Inspired by the
+  with the opposing side ramping linearly between. Defaults to −63 (Seq A
+  alone), so B stays silent until you dial it in. Inspired by the
   merged-output architecture of sd88me's own
   [Maze Lite](https://github.com/sd88me/schwung-maze-sequencer)'s Trig Mix,
   though the velocity curve itself differs from Trig Mix's crossfade.
