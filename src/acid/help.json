@@ -47,14 +47,14 @@
     {
       "title": "Global",
       "lines": [
-        "Root/Scale: shared",
+        "Scale/Root: shared",
         "by both sequencers.",
         "Seq B: on/off.",
-        "A Algo / B Algo:",
-        "1-16, blends a 2nd",
-        "generator in.",
         "Blend: crossfade A",
         "<-> B, centre = both.",
+        "Algo A / Algo B:",
+        "1-16, blends a 2nd",
+        "generator in.",
         "Reset Both: snap",
         "both to step 1 every",
         "1/2/4/8 bars, or Off",

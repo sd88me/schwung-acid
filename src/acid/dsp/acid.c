@@ -729,7 +729,10 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v > 3) v = 3;
             s->octave_range = v;
         } else if (strcmp(k, "length") == 0) {
-            int v = parse_int(val, 16);
+            /* Declared as a float chain_param (min 2, max 32) so the knob rides
+             * the range-normalised curve instead of one-step-per-detent -- the
+             * wire value arrives like "16.000", so round rather than truncate. */
+            int v = (int)(parse_float(val, 16.0f) + 0.5f);
             if (v < MIN_LENGTH) v = MIN_LENGTH;
             if (v > MAX_STEPS) v = MAX_STEPS;
             s->length = v;
@@ -808,28 +811,28 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
          * kept in sync with module.json's chain_params by hand. */
         static const char params[] =
             "["
-            "{\"key\":\"a_generate\",\"name\":\"A Generate\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
-            "{\"key\":\"a_mutate\",\"name\":\"A Mutate\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
-            "{\"key\":\"a_density\",\"name\":\"A Density\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.7},"
-            "{\"key\":\"a_accent\",\"name\":\"A Accent\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.4},"
-            "{\"key\":\"a_slide\",\"name\":\"A Slide\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.25},"
-            "{\"key\":\"a_octaves\",\"name\":\"A Octaves\",\"type\":\"int\",\"min\":1,\"max\":3,\"step\":1,\"default\":2},"
-            "{\"key\":\"a_length\",\"name\":\"A Length\",\"type\":\"int\",\"min\":2,\"max\":32,\"step\":1,\"default\":16},"
-            "{\"key\":\"a_gate\",\"name\":\"A Gate\",\"type\":\"float\",\"min\":0.05,\"max\":1.0,\"step\":0.01,\"default\":0.5},"
-            "{\"key\":\"b_generate\",\"name\":\"B Generate\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
-            "{\"key\":\"b_mutate\",\"name\":\"B Mutate\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
-            "{\"key\":\"b_density\",\"name\":\"B Density\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.7},"
-            "{\"key\":\"b_accent\",\"name\":\"B Accent\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.4},"
-            "{\"key\":\"b_slide\",\"name\":\"B Slide\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.25},"
-            "{\"key\":\"b_octaves\",\"name\":\"B Octaves\",\"type\":\"int\",\"min\":1,\"max\":3,\"step\":1,\"default\":2},"
-            "{\"key\":\"b_length\",\"name\":\"B Length\",\"type\":\"int\",\"min\":2,\"max\":32,\"step\":1,\"default\":16},"
-            "{\"key\":\"b_gate\",\"name\":\"B Gate\",\"type\":\"float\",\"min\":0.05,\"max\":1.0,\"step\":0.01,\"default\":0.5},"
-            "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
+            "{\"key\":\"a_generate\",\"name\":\"Generate A\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
+            "{\"key\":\"a_mutate\",\"name\":\"Mutate A\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
+            "{\"key\":\"a_density\",\"name\":\"Density A\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.7,\"unit\":\"%\"},"
+            "{\"key\":\"a_accent\",\"name\":\"Accent A\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.4,\"unit\":\"%\"},"
+            "{\"key\":\"a_slide\",\"name\":\"Slide A\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.25,\"unit\":\"%\"},"
+            "{\"key\":\"a_octaves\",\"name\":\"Octaves A\",\"type\":\"int\",\"min\":1,\"max\":3,\"step\":1,\"default\":2},"
+            "{\"key\":\"a_length\",\"name\":\"Length A\",\"type\":\"float\",\"min\":2,\"max\":32,\"step\":1,\"default\":16,\"display_format\":\".0f\"},"
+            "{\"key\":\"a_gate\",\"name\":\"Gate A\",\"type\":\"float\",\"min\":0.05,\"max\":1.0,\"step\":0.01,\"default\":0.5,\"unit\":\"%\"},"
+            "{\"key\":\"b_generate\",\"name\":\"Generate B\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
+            "{\"key\":\"b_mutate\",\"name\":\"Mutate B\",\"type\":\"enum\",\"options\":[\"off\",\"go\"],\"access\":\"write\"},"
+            "{\"key\":\"b_density\",\"name\":\"Density B\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.7,\"unit\":\"%\"},"
+            "{\"key\":\"b_accent\",\"name\":\"Accent B\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.4,\"unit\":\"%\"},"
+            "{\"key\":\"b_slide\",\"name\":\"Slide B\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.25,\"unit\":\"%\"},"
+            "{\"key\":\"b_octaves\",\"name\":\"Octaves B\",\"type\":\"int\",\"min\":1,\"max\":3,\"step\":1,\"default\":2},"
+            "{\"key\":\"b_length\",\"name\":\"Length B\",\"type\":\"float\",\"min\":2,\"max\":32,\"step\":1,\"default\":16,\"display_format\":\".0f\"},"
+            "{\"key\":\"b_gate\",\"name\":\"Gate B\",\"type\":\"float\",\"min\":0.05,\"max\":1.0,\"step\":0.01,\"default\":0.5,\"unit\":\"%\"},"
             "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\"],\"default\":0},"
+            "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
             "{\"key\":\"seq_b_enable\",\"name\":\"Seq B\",\"type\":\"enum\",\"options\":[\"off\",\"on\"],\"default\":1},"
-            "{\"key\":\"a_algo\",\"name\":\"A Algo\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
-            "{\"key\":\"b_algo\",\"name\":\"B Algo\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":0},"
+            "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
+            "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4}"
             "]";
         n = snprintf(buf, buf_len, "%s", params);
