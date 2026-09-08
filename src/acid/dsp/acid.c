@@ -19,8 +19,9 @@
  * "Trig Mix": -63 = A only @127, 0 = both @100, +64 = B only @127.
  *
  * No banks, no undo, no persistence in this version -- Generate/Mutate only.
- * An incoming note-on sets the shared root live (hybrid trigger model);
- * sequencing itself keeps running regardless of note input.
+ * An incoming note-on transposes both sequencers live, relative to C4
+ * (hybrid trigger model) -- the Root knob is left untouched. Sequencing
+ * itself keeps running regardless of note input.
  */
 
 #include <stdint.h>
@@ -36,6 +37,8 @@
 #define SEQ_A       0
 #define SEQ_B       1
 #define OUT_CH      0   /* channel byte is overwritten by the chain host anyway */
+#define ACID_ANCHOR_NOTE 60  /* incoming note that means "no transpose" (C4, like tb3po-lite) */
+#define ACID_MAX_TRANSPOSE 48
 
 typedef enum { STEP_REST = 0, STEP_NOTE = 1, STEP_ACCENT = 2, STEP_SLIDE = 3 } step_kind_t;
 
@@ -94,7 +97,10 @@ typedef struct {
     acid_seq_t seq[NUM_SEQS];
     int seq_b_enabled;
 
-    int root;             /* 0-11 */
+    int root;             /* 0-11, knob/preset only -- never written by MIDI in */
+    int live_transpose;   /* semitones from incoming notes, anchored at C4; kept
+                           * separate from `root` so playing notes (or an echo of
+                           * our own output) never moves the Root knob/field */
     int scale;            /* index into SCALES */
     int blend;             /* -63..64, Trig-Mix-style crossfade */
     int reset_bars_idx;   /* 0..3 -> {1,2,4,8} bars, 4 = Off */
@@ -321,11 +327,12 @@ static void mutate_pattern(acid_seq_t *s, int scale_idx) {
 /* Playback                                                                */
 /* ---------------------------------------------------------------------- */
 
-static int note_for_step(const acid_seq_t *s, int scale_idx, int root, int step_idx) {
+static int note_for_step(const acid_seq_t *s, int scale_idx, int root, int transpose, int step_idx) {
     const scale_t *sc = &SCALES[scale_idx];
     /* Base in the C1 octave, matching tb3po -- keeps the emitted range well
-     * clear of Move's pad-LED note range. */
-    int base = 24 + root;
+     * clear of Move's pad-LED note range. `transpose` is the live offset from
+     * incoming notes (0 = play at the Root knob's key). */
+    int base = 24 + root + transpose;
     int note = base + sc->degrees[s->degrees[step_idx]] + 12 * s->octaves[step_idx];
     if (note < 0) note = 0;
     if (note > 127) note = 127;
@@ -411,7 +418,7 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int prev_pos, int vel_
         return count;
     }
 
-    int note = note_for_step(s, t->scale, t->root, s->position);
+    int note = note_for_step(s, t->scale, t->root, t->live_transpose, s->position);
     int is_accent = (kind == STEP_ACCENT);
     int base_vel = is_accent ? 118 : 72;
     int vel = (base_vel * vel_scale) / 127;
@@ -514,6 +521,7 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
     }
     t->seq_b_enabled = 1;
     t->root = 9; /* A, matches tb3po's default */
+    t->live_transpose = 0;
     t->scale = 0;
     t->blend = 0;
     t->reset_bars_idx = 4; /* Off */
@@ -583,11 +591,16 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
         return 0;
     }
 
-    /* Hybrid trigger model: a held/incoming note sets the shared root live;
-     * sequencing itself is not gated by it. Note-on/off are both swallowed
-     * (Acid generates its own stream, it does not pass notes through). */
+    /* Hybrid trigger model: an incoming note transposes both sequencers live
+     * (relative to C4), leaving the Root knob/field untouched -- so a clip on
+     * the track, a stray pad, or an echo of our own output can't drag Root
+     * around. Sequencing is not gated by note input. Note-on/off are both
+     * swallowed (Acid generates its own stream, it does not pass notes through). */
     if (type == 0x90 && in_len >= 3 && in_msg[2] > 0) {
-        t->root = in_msg[1] % 12;
+        int tr = (int)in_msg[1] - ACID_ANCHOR_NOTE;
+        if (tr < -ACID_MAX_TRANSPOSE) tr = -ACID_MAX_TRANSPOSE;
+        if (tr >  ACID_MAX_TRANSPOSE) tr =  ACID_MAX_TRANSPOSE;
+        t->live_transpose = tr;
         return 0;
     }
     if (type == 0x80 || (type == 0x90 && in_len >= 3 && in_msg[2] == 0)) {

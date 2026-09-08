@@ -11,8 +11,11 @@ project (`claude/acid-seq-design.md`).
   Density / Accent / Slide / Octaves / Length / Gate and a per-step
   four-way state (rest / note / accent / slide).
 - Both free-run continuously off Move's transport. Playing a note into the
-  slot sets the shared **root** live — sequencing itself is never gated by
-  note input.
+  slot **transposes** both sequencers live, relative to C4 (C4 = no shift);
+  the shared **Root** knob still sets the key they play in and is never
+  moved by note input — so a clip on the track, a stray pad, or an echo of
+  Acid's own output can't drag it around. Sequencing itself is never gated
+  by note input.
 - Each sequencer has its own **Algo** knob (1–16): 1 reproduces
   [schwung-tb3po](https://github.com/charlesvestal/schwung-tb3po)'s
   density/accent/slide/octave model exactly; higher settings blend in a

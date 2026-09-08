@@ -11,8 +11,11 @@
         "Both run on Move's",
         "clock continuously.",
         "",
-        "Play a note to set",
-        "the shared root."
+        "Play a note to",
+        "transpose live",
+        "(C4 = no shift).",
+        "Root knob sets the",
+        "key it plays in."
       ]
     },
     {
@@ -22,8 +25,8 @@
         " MIDI FX slot.",
         "2) Route to a synth.",
         "3) Press Play.",
-        "4) Play a note to",
-        " set the key."
+        "4) Set Root, or play",
+        " a note to transpose."
       ]
     },
     {
