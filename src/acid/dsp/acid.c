@@ -15,8 +15,8 @@
  * slot's recv channel regardless of what we send), Seq A and Seq B are not
  * routed to separate synths the way tb3po's two Tool slots are. Instead
  * both merge into the single output stream, mixed by a bipolar Blend knob
- * (-63..64) using the same velocity-crossfade shape as sd88me's own Maze Lite
- * "Trig Mix": -63 = A only @127, 0 = both @100, +64 = B only @127.
+ * (-63..64) that crossfades the two by scaling each side's own velocity:
+ * -63 = A only @127, 0 = both @100, +64 = B only @127.
  *
  * No banks, no undo, no persistence in this version -- Generate/Mutate only.
  * An incoming note-on transposes both sequencers live, relative to C4
@@ -102,7 +102,7 @@ typedef struct {
                            * separate from `root` so playing notes (or an echo of
                            * our own output) never moves the Root knob/field */
     int scale;            /* index into SCALES */
-    int blend;             /* -63..64, Trig-Mix-style crossfade */
+    int blend;             /* -63..64, bipolar velocity crossfade A<->B */
     int reset_bars_idx;   /* 0..3 -> {1,2,4,8} bars, 4 = Off */
 
     /* Shared clock -- ported from tb3po's dual-slot clock handling. */
@@ -343,7 +343,7 @@ static int next_position(const acid_seq_t *s) {
     return (s->position + 1) % s->length;
 }
 
-/* Blend ("Trig Mix") scales each sequencer's OWN velocity by a 0-100%
+/* Blend scales each sequencer's OWN velocity by a 0-100%
  * multiplier -- it never substitutes in an absolute target velocity. That
  * keeps each sequence's internal accent/normal ratio (118 vs 72, see
  * emit_step_for_seq) intact; only the relative balance between A and B

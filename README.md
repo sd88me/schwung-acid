@@ -29,10 +29,7 @@ project (`claude/acid-seq-design.md`).
   feature of acid lines — stays intact no matter where the knob sits: −63 =
   A at 100% / B at 0%, centre = both at 100%, +64 = A at 0% / B at 100%,
   with the opposing side ramping linearly between. Defaults to −63 (Seq A
-  alone), so B stays silent until you dial it in. Inspired by the
-  merged-output architecture of sd88me's own
-  [Maze Lite](https://github.com/sd88me/schwung-maze-sequencer)'s Trig Mix,
-  though the velocity curve itself differs from Trig Mix's crossfade.
+  alone), so B stays silent until you dial it in.
 - **Reset Both** (1/2/4/8 bars, or Off) periodically snaps both sequencers
   back to step 1 together. Off lets differently-lengthed A/B patterns drift
   as a genuine polymeter.
@@ -46,6 +43,58 @@ project (`claude/acid-seq-design.md`).
 | **SEQUENCE A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **SEQUENCE B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **Global** | Scale, Root, Seq B on/off, Blend, Algo A, Algo B, Reset Both |
+
+## What each knob does
+
+### SEQUENCE A / SEQUENCE B (one identical set per sequencer)
+
+- **Generate** — turn it to re-roll that sequencer's whole pattern from a
+  fresh random seed. Density / Accent / Slide / Octaves / Algo are read at
+  this moment, so they shape *the next* re-roll, not the pattern already
+  playing.
+- **Mutate** — turn it to nudge ~25 % of the steps in place (rest↔note,
+  re-pick degree/octave) without a full re-roll. Uses Density / Accent /
+  Slide / Octaves but not Algo. Keeps the pattern recognisable while it
+  drifts; repeated Mutates keep evolving.
+- **Density** (0–100 %) — chance that any given step is a note rather than a
+  rest. Low = sparse, high = every step fires. Applied on Generate/Mutate.
+- **Accent** (0–100 %) — chance a note is accented (velocity 118 vs the
+  normal 72). Applied on Generate/Mutate.
+- **Slide** (0–100 %) — chance a note slides into the next step: it holds
+  through the step boundary and sends portamento (CC 65), 303-style. A
+  slide into a rest is demoted to a plain note. Applied on Generate/Mutate.
+- **Octaves** (1–3) — how many octaves above the root the pattern's pitches
+  may span. Applied on Generate/Mutate.
+- **Length** (2–32) — number of steps before the pattern loops. Takes
+  effect immediately (the loop point moves); Generate to fill the new
+  span with fresh steps.
+- **Gate** (0–100 %) — note length as a fraction of one step. Low =
+  staccato blips; high = notes nearly touch. Held slides ignore it and
+  ring until the next note. Live — no re-roll needed.
+
+### Global
+
+- **Scale** — the scale both sequencers quantise to: Minor, Phrygian,
+  Harmonic Minor, Minor Pentatonic, Dorian, Major.
+- **Root** — the key both sequencers play in (C…B). Authoritative and
+  stable: playing a note into the slot transposes around this live (C4 =
+  no shift) but never moves the knob.
+- **Seq B** (on/off) — off silences Sequencer B and releases any note it
+  was holding; A keeps running.
+- **Blend** (−63…+64) — velocity balance between the two sequencers merged
+  into the one output. −63 = A only, centre = both at full, +64 = B only,
+  each side scaling the *other* sequencer's own velocities down as the knob
+  travels (so each line keeps its internal accent/normal ratio). Default
+  −63.
+- **Algo A / Algo B** (1–16) — per sequencer, how much of the secondary
+  generator is blended into the primary on the next re-roll. 1 = pure
+  tb3po model (density/accent/slide/octave rolls); 16 = mostly the
+  secondary (urn-style non-repeating pitch draw, random-walk gate density,
+  pyramid-shaped accents); in between substitutes secondary for primary
+  per step at a rising probability. Read on Generate only.
+- **Reset Both** — 1 / 2 / 4 / 8 bars, or Off. Every N bars, snap both
+  sequencers back to step 1 together. Off lets differently-lengthed A/B
+  patterns run free as a genuine polymeter.
 
 ## Install
 
@@ -95,7 +144,7 @@ scripts/
 
 ## Credits & license
 
-Generation ideas drawn from three references (see the design doc for detail):
+Generation ideas drawn from two references (see the design doc for detail):
 - [schwung-tb3po](https://github.com/charlesvestal/schwung-tb3po) by Charles
   Vestal (GPL-3.0), itself a port of djphazer's `TB_3PO` applet from the
   [O_C-Phazerville](https://github.com/djphazer/O_C-Phazerville) Hemisphere
@@ -110,9 +159,5 @@ Generation ideas drawn from three references (see the design doc for detail):
   final decision — it's slated to be replaced with an original permutation
   before any release beyond personal/non-commercial use, consistent with
   Sting.amxd's CC BY-NC-ND (NonCommercial, NoDerivatives) terms.
-- [schwung-maze-sequencer](https://github.com/sd88me/schwung-maze-sequencer)
-  by sd88me — the dual-sequencer-merged-into-one-midifx-output
-  architecture that Blend is built on (the velocity curve itself is
-  Acid-specific — see above).
 
 Created by sd88me for [Schwung](https://github.com/charlesvestal/schwung).
