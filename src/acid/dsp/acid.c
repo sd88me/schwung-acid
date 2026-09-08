@@ -817,8 +817,8 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     else if (strcmp(key, "chain_params") == 0) {
         /* Not actually consulted for midi_fx loading -- chain_midi.c reads
          * chain_params straight out of module.json on disk (parse_chain_params),
-         * falling back to it precisely because our ui_hierarchy uses bare
-         * string param refs with no inline type info. Kept here anyway for
+         * falling back to it precisely because our ui_hierarchy params carry
+         * only key/short_name, no inline type info. Kept here anyway for
          * parity with the rest of the ecosystem (arp.c does the same) and
          * any other caller that does ask the loaded plugin directly. Must be
          * kept in sync with module.json's chain_params by hand. */

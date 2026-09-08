@@ -42,9 +42,9 @@ project (`claude/acid-seq-design.md`).
 
 | Page | Knobs |
 |---|---|
-| **Sequencer A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
-| **Sequencer B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
-| **Global** | Root, Scale, Seq B on/off, A Algo, B Algo, Blend, Reset Both, *(free)* |
+| **SEQUENCE A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
+| **SEQUENCE B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
+| **Global** | Scale, Root, Seq B on/off, Blend, Algo A, Algo B, Reset Both |
 
 ## Install
 

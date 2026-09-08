@@ -15,7 +15,7 @@
     "ui_hierarchy": {
       "levels": {
         "root": {
-          "name": "Sequencer A",
+          "name": "SEQUENCE A",
           "params": [
             "a_generate",
             "a_mutate",
@@ -28,10 +28,19 @@
             { "label": "Seq B", "level": "seqB" },
             { "label": "Global", "level": "global" }
           ],
-          "knobs": ["a_generate", "a_mutate", "a_density", "a_accent", "a_slide", "a_octaves", "a_length", "a_gate"]
+          "knobs": [
+            { "key": "a_generate", "short_name": "Generate" },
+            { "key": "a_mutate",   "short_name": "Mutate" },
+            { "key": "a_density",  "short_name": "Density" },
+            { "key": "a_accent",   "short_name": "Accent" },
+            { "key": "a_slide",    "short_name": "Slide" },
+            { "key": "a_octaves",  "short_name": "Octaves" },
+            { "key": "a_length",   "short_name": "Length" },
+            { "key": "a_gate",     "short_name": "Gate" }
+          ]
         },
         "seqB": {
-          "name": "Sequencer B",
+          "name": "SEQUENCE B",
           "params": [
             "b_generate",
             "b_mutate",
@@ -42,7 +51,16 @@
             "b_length",
             "b_gate"
           ],
-          "knobs": ["b_generate", "b_mutate", "b_density", "b_accent", "b_slide", "b_octaves", "b_length", "b_gate"]
+          "knobs": [
+            { "key": "b_generate", "short_name": "Generate" },
+            { "key": "b_mutate",   "short_name": "Mutate" },
+            { "key": "b_density",  "short_name": "Density" },
+            { "key": "b_accent",   "short_name": "Accent" },
+            { "key": "b_slide",    "short_name": "Slide" },
+            { "key": "b_octaves",  "short_name": "Octaves" },
+            { "key": "b_length",   "short_name": "Length" },
+            { "key": "b_gate",     "short_name": "Gate" }
+          ]
         },
         "global": {
           "name": "Global",
