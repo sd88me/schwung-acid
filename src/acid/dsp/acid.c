@@ -53,7 +53,11 @@ static const scale_t SCALES[] = {
 
 /* Sting.amxd's "VelPyra" fixed permutation -- an evenly-spread-but-irregular
  * accent order (used by the secondary generator instead of independent
- * per-step accent rolls). Values 0-15, taken directly from the patch. */
+ * per-step accent rolls). Values 0-15, taken directly from the patch --
+ * kept deliberately for now (v1: match/learn the reference's actual feel on
+ * hardware before designing an original replacement for final release; see
+ * the design doc and README credit for the license/attribution status of
+ * this specific table). */
 static const uint8_t VEL_PYRAMID[16] = {0, 14, 15, 6, 1, 2, 10, 3, 12, 13, 11, 5, 4, 8, 7, 9};
 
 /* Bar-length lookup for the Reset Both control: index -> 16th-notes per bar

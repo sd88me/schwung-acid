@@ -96,9 +96,16 @@ Generation ideas drawn from three references (see the design doc for detail):
   Vestal (GPL-3.0), itself a port of djphazer's `TB_3PO` applet from the
   [O_C-Phazerville](https://github.com/djphazer/O_C-Phazerville) Hemisphere
   Suite — the primary generator (Algo 1) is adapted from this model.
-- `Sting.amxd` ("Sting 2.26" by Iftah Gabbai, CC BY-NC-ND) — inspiration only
-  for the secondary generator's mechanism (urn-style draw, random-walk
-  density, fixed-permutation accents); no code or assets reused.
+- `Sting.amxd` ("Sting 2.26" by Iftah Gabbai, CC BY-NC-ND) — the secondary
+  generator's *mechanisms* (urn-style non-repeating draw, random-walk gate
+  density) are independently reimplemented, inspired by the patch's approach
+  but not copied from it. The **accent-order table itself is a direct
+  exception**: `VEL_PYRAMID`'s 16 values are Sting's actual "VelPyra"
+  permutation, reused as-is (not just inspired by) for v1 while the module is
+  developed and played on real hardware. This is a placeholder, not a
+  final decision — it's slated to be replaced with an original permutation
+  before any release beyond personal/non-commercial use, consistent with
+  Sting.amxd's CC BY-NC-ND (NonCommercial, NoDerivatives) terms.
 - [schwung-maze-sequencer](https://github.com/sd88me/schwung-maze-sequencer)
   by sd88me — the dual-sequencer-merged-into-one-midifx-output
   architecture that Blend is built on (the velocity curve itself is
