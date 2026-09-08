@@ -3,7 +3,7 @@
   "name": "Acid",
   "abbrev": "ACID",
   "version": "0.1.0",
-  "author": "Sam Di Domizio",
+  "author": "sd88me",
   "description": "Dual generative acid-bassline sequencer, blendable algorithms, slot MIDI FX.",
   "dsp": "dsp.so",
   "help": "help.json",

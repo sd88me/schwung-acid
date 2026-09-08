@@ -15,7 +15,7 @@
  * slot's recv channel regardless of what we send), Seq A and Seq B are not
  * routed to separate synths the way tb3po's two Tool slots are. Instead
  * both merge into the single output stream, mixed by a bipolar Blend knob
- * (-63..64) using the same velocity-crossfade shape as Sam's own Maze Lite
+ * (-63..64) using the same velocity-crossfade shape as sd88me's own Maze Lite
  * "Trig Mix": -63 = A only @127, 0 = both @100, +64 = B only @127.
  *
  * No banks, no undo, no persistence in this version -- Generate/Mutate only.

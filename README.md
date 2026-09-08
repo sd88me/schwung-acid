@@ -26,7 +26,7 @@ project (`claude/acid-seq-design.md`).
   feature of acid lines — stays intact no matter where the knob sits: −63 =
   A at 100% / B at 0%, centre = both at 100%, +64 = A at 0% / B at 100%,
   with the opposing side ramping linearly between. Inspired by the
-  merged-output architecture of Sam's own
+  merged-output architecture of sd88me's own
   [Maze Lite](https://github.com/sd88me/schwung-maze-sequencer)'s Trig Mix,
   though the velocity curve itself differs from Trig Mix's crossfade.
 - **Reset Both** (1/2/4/8 bars, or Off) periodically snaps both sequencers
@@ -100,8 +100,8 @@ Generation ideas drawn from three references (see the design doc for detail):
   for the secondary generator's mechanism (urn-style draw, random-walk
   density, fixed-permutation accents); no code or assets reused.
 - [schwung-maze-sequencer](https://github.com/sd88me/schwung-maze-sequencer)
-  by Sam Di Domizio — the dual-sequencer-merged-into-one-midifx-output
+  by sd88me — the dual-sequencer-merged-into-one-midifx-output
   architecture that Blend is built on (the velocity curve itself is
   Acid-specific — see above).
 
-Created by Sam Di Domizio for [Schwung](https://github.com/charlesvestal/schwung).
+Created by sd88me for [Schwung](https://github.com/charlesvestal/schwung).
