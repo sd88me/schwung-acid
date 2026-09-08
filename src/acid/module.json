@@ -1,0 +1,90 @@
+{
+  "id": "acid",
+  "name": "Acid",
+  "abbrev": "ACID",
+  "version": "0.1.0",
+  "author": "Sam Di Domizio",
+  "description": "Dual generative acid-bassline sequencer, blendable algorithms, slot MIDI FX.",
+  "dsp": "dsp.so",
+  "help": "help.json",
+  "capabilities": {
+    "chainable": true,
+    "component_type": "midi_fx",
+    "midi_in": true,
+    "midi_out": true,
+    "ui_hierarchy": {
+      "levels": {
+        "root": {
+          "name": "Sequencer A",
+          "params": [
+            "a_generate",
+            "a_mutate",
+            "a_density",
+            "a_accent",
+            "a_slide",
+            "a_octaves",
+            "a_length",
+            "a_gate",
+            { "label": "Seq B", "level": "seqB" },
+            { "label": "Global", "level": "global" }
+          ],
+          "knobs": ["a_generate", "a_mutate", "a_density", "a_accent", "a_slide", "a_octaves", "a_length", "a_gate"]
+        },
+        "seqB": {
+          "name": "Sequencer B",
+          "params": [
+            "b_generate",
+            "b_mutate",
+            "b_density",
+            "b_accent",
+            "b_slide",
+            "b_octaves",
+            "b_length",
+            "b_gate"
+          ],
+          "knobs": ["b_generate", "b_mutate", "b_density", "b_accent", "b_slide", "b_octaves", "b_length", "b_gate"]
+        },
+        "global": {
+          "name": "Global",
+          "params": [
+            "root",
+            "scale",
+            "seq_b_enable",
+            "a_algo",
+            "b_algo",
+            "blend",
+            "reset_bars"
+          ],
+          "knobs": ["root", "scale", "seq_b_enable", "a_algo", "b_algo", "blend", "reset_bars"]
+        }
+      }
+    }
+  },
+  "chain_params": [
+    { "key": "a_generate", "name": "A Generate", "type": "enum", "options": ["off", "go"], "access": "write" },
+    { "key": "a_mutate",   "name": "A Mutate",   "type": "enum", "options": ["off", "go"], "access": "write" },
+    { "key": "a_density",  "name": "A Density",  "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.7 },
+    { "key": "a_accent",   "name": "A Accent",   "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.4 },
+    { "key": "a_slide",    "name": "A Slide",    "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.25 },
+    { "key": "a_octaves",  "name": "A Octaves",  "type": "int",   "min": 1, "max": 3, "step": 1, "default": 2 },
+    { "key": "a_length",   "name": "A Length",   "type": "int",   "min": 2, "max": 32, "step": 1, "default": 16 },
+    { "key": "a_gate",     "name": "A Gate",     "type": "float", "min": 0.05, "max": 1.0, "step": 0.01, "default": 0.5 },
+
+    { "key": "b_generate", "name": "B Generate", "type": "enum", "options": ["off", "go"], "access": "write" },
+    { "key": "b_mutate",   "name": "B Mutate",   "type": "enum", "options": ["off", "go"], "access": "write" },
+    { "key": "b_density",  "name": "B Density",  "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.7 },
+    { "key": "b_accent",   "name": "B Accent",   "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.4 },
+    { "key": "b_slide",    "name": "B Slide",    "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.25 },
+    { "key": "b_octaves",  "name": "B Octaves",  "type": "int",   "min": 1, "max": 3, "step": 1, "default": 2 },
+    { "key": "b_length",   "name": "B Length",   "type": "int",   "min": 2, "max": 32, "step": 1, "default": 16 },
+    { "key": "b_gate",     "name": "B Gate",     "type": "float", "min": 0.05, "max": 1.0, "step": 0.01, "default": 0.5 },
+
+    { "key": "root",         "name": "Root",       "type": "enum", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": 9 },
+    { "key": "scale",        "name": "Scale",      "type": "enum", "options": ["Minor", "Phrygian", "HarmMinor", "MinPent", "Dorian", "Major"], "default": 0 },
+    { "key": "seq_b_enable", "name": "Seq B",      "type": "enum", "options": ["off", "on"], "default": 1 },
+    { "key": "a_algo",       "name": "A Algo",     "type": "int",  "min": 1, "max": 16, "step": 1, "default": 1 },
+    { "key": "b_algo",       "name": "B Algo",     "type": "int",  "min": 1, "max": 16, "step": 1, "default": 1 },
+    { "key": "blend",        "name": "Blend",      "type": "int",  "min": -63, "max": 64, "step": 1, "default": 0 },
+    { "key": "reset_bars",   "name": "Reset Both", "type": "enum", "options": ["1 bar", "2 bars", "4 bars", "8 bars", "Off"], "default": 4 }
+  ]
+}
