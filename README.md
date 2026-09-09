@@ -29,7 +29,8 @@ project (`claude/acid-seq-design.md`).
   feature of acid lines — stays intact no matter where the knob sits: −63 =
   A at 100% / B at 0%, centre = both at 100%, +64 = A at 0% / B at 100%,
   with the opposing side ramping linearly between. Defaults to −63 (Seq A
-  alone), so B stays silent until you dial it in.
+  alone), so B stays silent until you dial it in — which is also how you
+  switch B off, no separate on/off needed.
 - **Reset Both** (1/2/4/8 bars, or Off) periodically snaps both sequencers
   back to step 1 together. Off lets differently-lengthed A/B patterns drift
   as a genuine polymeter.
@@ -42,7 +43,7 @@ project (`claude/acid-seq-design.md`).
 |---|---|
 | **SEQUENCE A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **SEQUENCE B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
-| **Global** | Scale, Root, Seq B on/off, Blend, Algo A, Algo B, Reset Both |
+| **Global** | Scale, Root, Tune B, Blend, Algo A, Algo B, Reset Both |
 
 ## What each knob does
 
@@ -79,8 +80,13 @@ project (`claude/acid-seq-design.md`).
 - **Root** — the key both sequencers play in (C…B). Authoritative and
   stable: playing a note into the slot transposes around this live (C4 =
   no shift) but never moves the knob.
-- **Seq B** (on/off) — off silences Sequencer B and releases any note it
-  was holding; A keeps running.
+- **Tune B** (−24…+24 semitones) — Sequencer B's interval *relative to
+  Sequencer A*: 0 = same key, +7 = a fifth above, −12 = an octave below.
+  It sits on top of Root and live note-in transposition rather than
+  replacing them, so transposing from a clip or a played note moves both
+  sequencers together and the A→B interval you dialled in is preserved.
+  Both sequencers still quantise to the same Scale, so B lands on real
+  scale degrees of its own transposed key.
 - **Blend** (−63…+64) — velocity balance between the two sequencers merged
   into the one output. −63 = A only, centre = both at full, +64 = B only,
   each side scaling the *other* sequencer's own velocities down as the knob

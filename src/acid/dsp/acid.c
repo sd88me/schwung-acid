@@ -18,10 +18,15 @@
  * (-63..64) that crossfades the two by scaling each side's own velocity:
  * -63 = A only @127, 0 = both @100, +64 = B only @127.
  *
+ * Blend doubles as Seq B's on/off -- at -63 it mutes B outright -- so the
+ * knob that would otherwise be a B enable is Tune B instead: B's interval
+ * from A in semitones (+/-24), layered on top of Root and live transpose.
+ *
  * No banks, no undo, no persistence in this version -- Generate/Mutate only.
  * An incoming note-on transposes both sequencers live, relative to C4
- * (hybrid trigger model) -- the Root knob is left untouched. Sequencing
- * itself keeps running regardless of note input.
+ * (hybrid trigger model) -- the Root knob is left untouched, and Tune B's
+ * interval rides along, so A and B stay locked at the interval you set.
+ * Sequencing itself keeps running regardless of note input.
  */
 
 #include <stdint.h>
@@ -38,6 +43,7 @@
 #define SEQ_B       1
 #define OUT_CH      0   /* channel byte is overwritten by the chain host anyway */
 #define ACID_ANCHOR_NOTE 60  /* incoming note that means "no transpose" (C4, like tb3po-lite) */
+#define ACID_MAX_TUNE 24     /* Seq B's interval from Seq A, +/- two octaves */
 #define ACID_MAX_TRANSPOSE 48
 
 typedef enum { STEP_REST = 0, STEP_NOTE = 1, STEP_ACCENT = 2, STEP_SLIDE = 3 } step_kind_t;
@@ -88,6 +94,10 @@ typedef struct {
     int algo;           /* 1..16 */
 
     /* Playback */
+    int tune;           /* semitone offset from the shared key; Seq A is always
+                         * 0, Seq B is the user's A->B interval. Applied on top
+                         * of root + live_transpose, so MIDI transposition moves
+                         * both sequencers and preserves the interval. */
     int last_note_on;   /* -1 = none */
     int portamento_on;
     long gate_samples_remaining;
@@ -95,7 +105,6 @@ typedef struct {
 
 typedef struct {
     acid_seq_t seq[NUM_SEQS];
-    int seq_b_enabled;
 
     int root;             /* 0-11, knob/preset only -- never written by MIDI in */
     int live_transpose;   /* semitones from incoming notes, anchored at C4; kept
@@ -331,8 +340,9 @@ static int note_for_step(const acid_seq_t *s, int scale_idx, int root, int trans
     const scale_t *sc = &SCALES[scale_idx];
     /* Base in the C1 octave, matching tb3po -- keeps the emitted range well
      * clear of Move's pad-LED note range. `transpose` is the live offset from
-     * incoming notes (0 = play at the Root knob's key). */
-    int base = 24 + root + transpose;
+     * incoming notes (0 = play at the Root knob's key); `s->tune` is this
+     * sequencer's own interval on top of that. */
+    int base = 24 + root + transpose + s->tune;
     int note = base + sc->degrees[s->degrees[step_idx]] + 12 * s->octaves[step_idx];
     if (note < 0) note = 0;
     if (note > 127) note = 127;
@@ -482,10 +492,8 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
 
     int vel_a, vel_b;
     compute_blend_velocities(t->blend, &vel_a, &vel_b);
-    if (!t->seq_b_enabled) vel_b = 0;
 
     for (int i = 0; i < NUM_SEQS; i++) {
-        if (i == SEQ_B && !t->seq_b_enabled) continue;
         acid_seq_t *s = &t->seq[i];
         int prev = s->position;
         s->position = forced_reset ? 0 : next_position(s);
@@ -517,9 +525,9 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
         s->octave_range = 2;
         s->gate = 0.5f;
         s->algo = 1;
+        s->tune = 0;
         s->last_note_on = -1;
     }
-    t->seq_b_enabled = 1;
     t->root = 9; /* A, matches tb3po's default */
     t->live_transpose = 0;
     t->scale = 0;
@@ -621,12 +629,6 @@ static int acid_tick(void *instance, int frames, int sample_rate,
     acid_inst_t *t = (acid_inst_t *)instance;
     if (!t) return 0;
     int count = 0;
-
-    /* A sequencer disabled mid-note needs its note-off cleaned up somewhere;
-     * this is the one place that runs unconditionally every block. */
-    if (!t->seq_b_enabled && t->seq[SEQ_B].last_note_on >= 0 && count < max_out) {
-        count += kill_seq_note(t, SEQ_B, &out_msgs[count], &out_lens[count], max_out - count);
-    }
 
     if (t->pulse_sync_active) {
         t->blocks_since_last_pulse++;
@@ -760,6 +762,11 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v < 1) v = 1;
             if (v > 16) v = 16;
             s->algo = v;
+        } else if (strcmp(k, "tune") == 0) {
+            int v = parse_int(val, 0);
+            if (v < -ACID_MAX_TUNE) v = -ACID_MAX_TUNE;
+            if (v >  ACID_MAX_TUNE) v =  ACID_MAX_TUNE;
+            s->tune = v;
         }
         return;
     }
@@ -768,8 +775,6 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         int v = parse_int(val, 9) % 12; if (v < 0) v += 12; t->root = v;
     } else if (strcmp(key, "scale") == 0) {
         int v = parse_int(val, 0); if (v < 0 || v >= NUM_SCALES) v = 0; t->scale = v;
-    } else if (strcmp(key, "seq_b_enable") == 0) {
-        t->seq_b_enabled = parse_int(val, 1) ? 1 : 0;
     } else if (strcmp(key, "blend") == 0) {
         int v = parse_int(val, 0);
         if (v < -63) v = -63;
@@ -802,6 +807,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         else if (strcmp(k, "length") == 0) n = snprintf(buf, buf_len, "%d", s->length);
         else if (strcmp(k, "gate") == 0) n = snprintf(buf, buf_len, "%.3f", s->gate);
         else if (strcmp(k, "algo") == 0) n = snprintf(buf, buf_len, "%d", s->algo);
+        else if (strcmp(k, "tune") == 0) n = snprintf(buf, buf_len, "%d", s->tune);
         else if (strcmp(k, "generate") == 0 || strcmp(k, "mutate") == 0) n = snprintf(buf, buf_len, "off");
         else return -1;
         if (n < 0) return -1;
@@ -811,7 +817,6 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
 
     if (strcmp(key, "root") == 0) n = snprintf(buf, buf_len, "%d", t->root);
     else if (strcmp(key, "scale") == 0) n = snprintf(buf, buf_len, "%d", t->scale);
-    else if (strcmp(key, "seq_b_enable") == 0) n = snprintf(buf, buf_len, "%d", t->seq_b_enabled);
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);
     else if (strcmp(key, "reset_bars") == 0) n = snprintf(buf, buf_len, "%d", t->reset_bars_idx);
     else if (strcmp(key, "chain_params") == 0) {
@@ -842,7 +847,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"b_gate\",\"name\":\"Gate B\",\"type\":\"float\",\"min\":0.05,\"max\":1.0,\"step\":0.01,\"default\":0.5,\"unit\":\"%\"},"
             "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\"],\"default\":0},"
             "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
-            "{\"key\":\"seq_b_enable\",\"name\":\"Seq B\",\"type\":\"enum\",\"options\":[\"off\",\"on\"],\"default\":1},"
+            "{\"key\":\"b_tune\",\"name\":\"Tune B\",\"type\":\"int\",\"min\":-24,\"max\":24,\"step\":1,\"default\":0},"
             "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":-63},"
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"

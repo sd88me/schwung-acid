@@ -52,7 +52,11 @@
       "lines": [
         "Scale/Root: shared",
         "by both sequencers.",
-        "Seq B: on/off.",
+        "Tune B: Seq B's",
+        "interval from A, in",
+        "semitones (+/-24).",
+        "Both still follow",
+        "Root and note-in.",
         "Blend: crossfade A",
         "<-> B, centre = both.",
         "Algo A / Algo B:",

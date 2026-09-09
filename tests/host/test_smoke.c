@@ -2,7 +2,7 @@
  * ARM64 cross-compiled one) and drives it like the chain host would: start
  * transport, tick for a while, twiddle params, confirm no crash and that the
  * output looks like sane MIDI (note ranges, on/off balance, resets landing,
- * root changing on note-in, disabled seq going quiet). Not shipped as part
+ * root changing on note-in, Blend muting Seq B). Not shipped as part
  * of the module -- a local build-time check only.
  *
  * Build & run:
@@ -70,14 +70,14 @@ int main(void) {
     if (!inst) { fprintf(stderr, "create_instance returned NULL\n"); return 1; }
     printf("instance created OK\n\n");
 
-    /* Polymeter setup: 5-step A, 7-step B, differing algos, both enabled,
-     * a non-trivial blend, and a bar-reset armed for the second half of the
-     * run so we can see positions actually snap together. */
+    /* Polymeter setup: 5-step A, 7-step B, differing algos, B tuned a fifth
+     * up, a non-trivial blend, and a bar-reset armed for the second half of
+     * the run so we can see positions actually snap together. */
     api->set_param(inst, "a_length", "5");
     api->set_param(inst, "b_length", "7");
     api->set_param(inst, "a_algo", "1");
     api->set_param(inst, "b_algo", "12");
-    api->set_param(inst, "seq_b_enable", "1");
+    api->set_param(inst, "b_tune", "7");
     api->set_param(inst, "blend", "0");
     api->set_param(inst, "reset_bars", "4"); /* Off, to start -- see polymeter drift */
 
@@ -90,7 +90,9 @@ int main(void) {
     n = api->get_param(inst, "a_length", buf, sizeof(buf));
     printf("a_length readback = %.*s\n", n, buf);
     n = api->get_param(inst, "b_algo", buf, sizeof(buf));
-    printf("b_algo readback = %.*s\n\n", n, buf);
+    printf("b_algo readback = %.*s\n", n, buf);
+    n = api->get_param(inst, "b_tune", buf, sizeof(buf));
+    printf("b_tune readback = %.*s (expect 7)\n\n", n, buf);
 
     /* Start transport. */
     uint8_t start_msg[1] = { 0xFA };
@@ -112,8 +114,8 @@ int main(void) {
             for (int m = 0; m < count; m++) observe(out_msgs[m], out_lens[m], i);
         }
         if (i == (3 * total_blocks) / 4) {
-            printf("\n--- disabling Seq B at block %ld ---\n\n", i);
-            api->set_param(inst, "seq_b_enable", "0");
+            printf("\n--- Blend hard left (Seq A alone) at block %ld ---\n\n", i);
+            api->set_param(inst, "blend", "-63");
         }
         if (i == total_blocks - 200) {
             printf("\n--- A Generate at block %ld ---\n\n", i);

@@ -67,13 +67,13 @@
           "params": [
             "scale",
             "root",
-            "seq_b_enable",
+            "b_tune",
             "blend",
             "a_algo",
             "b_algo",
             "reset_bars"
           ],
-          "knobs": ["scale", "root", "seq_b_enable", "blend", "a_algo", "b_algo", "reset_bars"]
+          "knobs": ["scale", "root", "b_tune", "blend", "a_algo", "b_algo", "reset_bars"]
         }
       }
     }
@@ -99,7 +99,7 @@
 
     { "key": "scale",        "name": "Scale",      "type": "enum", "options": ["Minor", "Phrygian", "HarmMinor", "MinPent", "Dorian", "Major"], "default": 0 },
     { "key": "root",         "name": "Root",       "type": "enum", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": 9 },
-    { "key": "seq_b_enable", "name": "Seq B",      "type": "enum", "options": ["off", "on"], "default": 1 },
+    { "key": "b_tune",       "name": "Tune B",     "type": "int",  "min": -24, "max": 24, "step": 1, "default": 0 },
     { "key": "blend",        "name": "Blend",      "type": "int",  "min": -63, "max": 64, "step": 1, "default": -63 },
     { "key": "a_algo",       "name": "Algo A",     "type": "int",  "min": 1, "max": 16, "step": 1, "default": 1 },
     { "key": "b_algo",       "name": "Algo B",     "type": "int",  "min": 1, "max": 16, "step": 1, "default": 1 },
