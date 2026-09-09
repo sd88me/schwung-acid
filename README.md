@@ -1,9 +1,22 @@
 # Acid — a generative acid-bassline MIDI FX for Ableton Move (Schwung)
 
+**v1.0** — feature-complete first release.
+
 Two independent generative sequencers, blended into one output, running as a
 [Schwung](https://github.com/charlesvestal/schwung) slot MIDI FX. Design notes
 and the decisions behind this module live in the "Schwung - Ableton Move"
 project (`claude/acid-seq-design.md`).
+
+## Changelog
+
+- **v1.0** — **Swing** added: MPC-style 16th-note swing (50–75%), shared by
+  both sequencers, the 8th Global knob. **Tune B** replaces the old Seq B
+  on/off toggle (Blend at −63 already mutes B outright, so the toggle was
+  redundant) with Sequencer B's interval from A in semitones, layered on
+  top of Root/live transpose so the interval holds under transposition.
+  Everything else — dual sequencers, Algo blending, Blend crossfade, Reset
+  Both polymeter, hybrid live transpose — carried over from the initial
+  build.
 
 ## What it is
 
