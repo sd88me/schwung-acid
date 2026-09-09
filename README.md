@@ -3,20 +3,8 @@
 **v1.0** — feature-complete first release.
 
 Two independent generative sequencers, blended into one output, running as a
-[Schwung](https://github.com/charlesvestal/schwung) slot MIDI FX. Design notes
-and the decisions behind this module live in the "Schwung - Ableton Move"
-project (`claude/acid-seq-design.md`).
+[Schwung](https://github.com/charlesvestal/schwung) slot MIDI FX. Combination of influences from existing popular, acid sequencer generators.
 
-## Changelog
-
-- **v1.0** — **Swing** added: MPC-style 16th-note swing (50–75%), shared by
-  both sequencers, the 8th Global knob. **Tune B** replaces the old Seq B
-  on/off toggle (Blend at −63 already mutes B outright, so the toggle was
-  redundant) with Sequencer B's interval from A in semitones, layered on
-  top of Root/live transpose so the interval holds under transposition.
-  Everything else — dual sequencers, Algo blending, Blend crossfade, Reset
-  Both polymeter, hybrid live transpose — carried over from the initial
-  build.
 
 ## What it is
 
@@ -32,8 +20,7 @@ project (`claude/acid-seq-design.md`).
 - Each sequencer has its own **Algo** knob (1–16): 1 reproduces
   [schwung-tb3po](https://github.com/charlesvestal/schwung-tb3po)'s
   density/accent/slide/octave model exactly; higher settings blend in a
-  second, `Sting.amxd`-inspired generator (non-repeating pitch draw, a
-  density-modulated random walk, and a fixed-permutation accent shape).
+  second, `Sting`-inspired generator.
 - A MIDI FX slot can only forward to the one synth in that slot, so Sequencer
   A and B **merge into a single output stream**, mixed by a bipolar **Blend**
   knob. Unlike a level crossfader, Blend scales each sequence's *own*
@@ -115,14 +102,7 @@ project (`claude/acid-seq-design.md`).
   sequencers back to step 1 together. Off lets differently-lengthed A/B
   patterns run free as a genuine polymeter.
 - **Swing** (50-75%) — MPC-style 16th-note swing, shared by both
-  sequencers so they stay locked together. 50% is straight (default);
-  each step past that delays every off-beat 16th and pulls the following
-  on-beat 16th in to compensate, so the pair still spans the same time
-  and tempo never drifts. 66% lands the off-16th on a perfect 8th-note
-  triplet; 75% is the classic MPC ceiling, pushed close enough to the
-  next downbeat that further swing stops reading as swing. Matches how
-  Move's own Groove control scales the same feel (0%/100%/beyond onto
-  50%/66.7%/75% here). Works whether Acid is free-running or following
+  sequencers so they stay locked together.  Works whether Acid is free-running or following
   an external MIDI clock.
 
 ## Install
@@ -181,12 +161,6 @@ Generation ideas drawn from two references (see the design doc for detail):
 - `Sting.amxd` ("Sting 2.26" by Iftah Gabbai, CC BY-NC-ND) — the secondary
   generator's *mechanisms* (urn-style non-repeating draw, random-walk gate
   density) are independently reimplemented, inspired by the patch's approach
-  but not copied from it. The **accent-order table itself is a direct
-  exception**: `VEL_PYRAMID`'s 16 values are Sting's actual "VelPyra"
-  permutation, reused as-is (not just inspired by) for v1 while the module is
-  developed and played on real hardware. This is a placeholder, not a
-  final decision — it's slated to be replaced with an original permutation
-  before any release beyond personal/non-commercial use, consistent with
-  Sting.amxd's CC BY-NC-ND (NonCommercial, NoDerivatives) terms.
+  but not copied from it.
 
 Created by sd88me for [Schwung](https://github.com/charlesvestal/schwung).
