@@ -1,8 +1,5 @@
 # Build output
 /dist/
 
-# Vendored Schwung headers — kept in sync with the host ABI by hand (see README)
-/src/include/
-
 # Windows "downloaded file" NTFS alternate-data-stream cruft
 *:Zone.Identifier

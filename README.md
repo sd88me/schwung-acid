@@ -107,36 +107,48 @@ Two independent generative sequencers, blended into one output, running as a
 
 ## Install
 
+Needs **Schwung v1.2.0 or later** on the Move (`min_host_version` in
+`module.json`).
+
+### From a release (no build)
+
+1. Download `acid-module.tar.gz` from the
+   [latest release](https://github.com/sd88me/schwung-acid/releases/latest).
+2. Copy it to the Move and unpack it into the `midi_fx` module folder:
+
+   ```bash
+   scp acid-module.tar.gz ableton@move.local:/data/UserData/
+   ssh ableton@move.local \
+     'tar -xzf /data/UserData/acid-module.tar.gz -C /data/UserData/schwung/modules/midi_fx/'
+   ```
+
+   The tarball holds a single `acid/` folder, so this lands it at
+   `/data/UserData/schwung/modules/midi_fx/acid/`.
+3. Power-cycle the Move (or rescan modules).
+
+**Acid** then appears as an option in a MIDI FX chain slot. Route it to a
+sound generator in the same slot, press Play.
+
+### From source
+
 ```bash
-git clone <this repo>
+git clone https://github.com/sd88me/schwung-acid
 cd schwung-acid
-cp <schwung>/src/host/plugin_api_v1.h  src/include/
-cp <schwung>/src/host/midi_fx_api_v1.h src/include/
-./scripts/build.sh
-MOVE_HOST=ableton@move.local ./scripts/install.sh
+./scripts/build.sh                                   # produces dist/acid-module.tar.gz
+MOVE_HOST=ableton@move.local ./scripts/install.sh    # scp's dist/acid/ to the Move
 ```
 
-Power-cycle the Move, or rescan modules. **Acid** appears as an option in a
-MIDI FX chain slot. Route it to a sound generator in the same slot, press
-Play.
+Then power-cycle / rescan as above.
 
 ## Build from source
 
-Requires Docker (cross-compiles the DSP for the Move's ARM64 chip).
+Requires Docker (cross-compiles the DSP for the Move's ARM64 chip). No Schwung
+checkout is needed — the two host ABI headers are vendored in `src/include/`
+(see `src/include/README.md` for how to re-sync them).
 
 ```bash
 bash scripts/build.sh
-# produces dist/acid-module.tar.gz
-```
-
-### Vendored headers
-
-The DSP compiles against two Schwung API headers, kept out of git so they
-stay in sync with the host ABI:
-
-```bash
-cp <schwung>/src/host/plugin_api_v1.h  src/include/
-cp <schwung>/src/host/midi_fx_api_v1.h src/include/
+# produces dist/acid-module.tar.gz  and  dist/acid/  (module.json, help.json, dsp.so)
 ```
 
 ## Repository layout
@@ -146,7 +158,7 @@ src/
   acid/
     module.json  help.json
     dsp/acid.c
-  include/          # vendored Schwung headers (not committed)
+  include/          # vendored Schwung host ABI headers (committed)
 scripts/
   build.sh  install.sh  Dockerfile
 ```

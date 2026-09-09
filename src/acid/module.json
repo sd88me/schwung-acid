@@ -3,6 +3,7 @@
   "name": "Acid",
   "abbrev": "ACID",
   "version": "1.0.0",
+  "min_host_version": "1.2.0",
   "author": "sd88me",
   "description": "Dual generative acid-bassline sequencer, blendable algorithms, slot MIDI FX.",
   "dsp": "dsp.so",
