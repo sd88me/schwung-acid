@@ -43,7 +43,7 @@ project (`claude/acid-seq-design.md`).
 |---|---|
 | **SEQUENCE A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **SEQUENCE B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
-| **Global** | Scale, Root, Tune B, Blend, Algo A, Algo B, Reset Both |
+| **Global** | Scale, Root, Tune B, Blend, Algo A, Algo B, Reset Both, Swing |
 
 ## What each knob does
 
@@ -101,6 +101,16 @@ project (`claude/acid-seq-design.md`).
 - **Reset Both** — 1 / 2 / 4 / 8 bars, or Off. Every N bars, snap both
   sequencers back to step 1 together. Off lets differently-lengthed A/B
   patterns run free as a genuine polymeter.
+- **Swing** (50-75%) — MPC-style 16th-note swing, shared by both
+  sequencers so they stay locked together. 50% is straight (default);
+  each step past that delays every off-beat 16th and pulls the following
+  on-beat 16th in to compensate, so the pair still spans the same time
+  and tempo never drifts. 66% lands the off-16th on a perfect 8th-note
+  triplet; 75% is the classic MPC ceiling, pushed close enough to the
+  next downbeat that further swing stops reading as swing. Matches how
+  Move's own Groove control scales the same feel (0%/100%/beyond onto
+  50%/66.7%/75% here). Works whether Acid is free-running or following
+  an external MIDI clock.
 
 ## Install
 

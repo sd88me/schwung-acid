@@ -22,6 +22,11 @@
  * knob that would otherwise be a B enable is Tune B instead: B's interval
  * from A in semitones (+/-24), layered on top of Root and live transpose.
  *
+ * Swing (50-75%, MPC-style 16th) is shared by both sequencers off one
+ * clock, so they always stay swung together regardless of Reset Both or
+ * differing lengths -- see swing_delay_frac()/swing_gap_mult() for the
+ * timing math.
+ *
  * No banks, no undo, no persistence in this version -- Generate/Mutate only.
  * An incoming note-on transposes both sequencers live, relative to C4
  * (hybrid trigger model) -- the Root knob is left untouched, and Tune B's
@@ -113,6 +118,14 @@ typedef struct {
     int scale;            /* index into SCALES */
     int blend;             /* -63..64, bipolar velocity crossfade A<->B */
     int reset_bars_idx;   /* 0..3 -> {1,2,4,8} bars, 4 = Off */
+    int swing_pct;         /* 50-75, MPC-style 16th swing; 50 = straight */
+    long swing_pulse_idx;  /* count of 16th pulses fired since Start -- pulse 0
+                            * is always exactly on the grid, odd pulses land
+                            * late and the following even pulse lands early by
+                            * the same amount, so tempo never drifts. Shared
+                            * between the internal free-run clock and the
+                            * external 24 PPQN follow so swing survives a
+                            * hand-off between the two. */
 
     /* Shared clock -- ported from tb3po's dual-slot clock handling. */
     float bpm;
@@ -390,6 +403,45 @@ static void recompute_step_length(acid_inst_t *t, int sample_rate) {
     t->samples_per_step = (double)sample_rate / sixteenths_per_sec;
 }
 
+/* Swing -- MPC-style 16th: swing_pct runs 50 (straight) to 75 (the point
+ * past which it stops reading as swing and starts reading as a different
+ * subdivision, per the classic MPC ceiling), same convention Move's own
+ * Groove control approximates -- 0%/100%/beyond map onto 50%/66.7%/75%
+ * here. 50% -> 2/3 gives the textbook 8th-note-triplet feel; 75% pushes
+ * the off-16th almost onto the next downbeat.
+ *
+ * Delayed as a fraction of one *pair* of 16th steps: the odd (off-beat)
+ * pulse of each pair arrives late by this fraction of a step, and the
+ * following even pulse arrives early by the same amount, so every pair
+ * still spans exactly two steps and the average tempo never drifts. */
+static double swing_delay_frac(const acid_inst_t *t) {
+    if (t->swing_pct <= 50) return 0.0;
+    double d = (double)(t->swing_pct - 50) / 50.0; /* 0 .. 0.5 at pct=75 */
+    if (d > 0.5) d = 0.5;
+    return d;
+}
+
+/* Multiplier on samples_per_step for the gap leading INTO the next pulse
+ * (internal free-run clock). Pulse 0 (first step after Start) is always
+ * exactly on the grid. */
+static double swing_gap_mult(const acid_inst_t *t) {
+    if (t->swing_pulse_idx <= 0) return 1.0;
+    double d = swing_delay_frac(t);
+    if (d <= 0.0) return 1.0;
+    return (t->swing_pulse_idx & 1) ? (1.0 + d) : (1.0 - d);
+}
+
+/* Same idea in units of 24-PPQN clock pulses (6 nominal per 16th step),
+ * for the external MIDI-clock-follow path. Rounds to whole pulses since
+ * that clock can't subdivide further; a pair (e.g. 8+4 at max swing)
+ * still sums to the unswung 12. */
+static int swing_pulse_target(const acid_inst_t *t) {
+    double mult = swing_gap_mult(t);
+    int target = (int)(6.0 * mult + 0.5);
+    if (target < 1) target = 1;
+    return target;
+}
+
 static int kill_seq_note(acid_inst_t *t, int seq_idx, uint8_t out_msgs[][3], int out_lens[], int max_out) {
     (void)t;
     acid_seq_t *s = &t->seq[seq_idx];
@@ -533,6 +585,8 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
     t->scale = 0;
     t->blend = -63; /* Seq A alone until Blend is dialled up */
     t->reset_bars_idx = 4; /* Off */
+    t->swing_pct = 50; /* straight */
+    t->swing_pulse_idx = 0;
     t->bpm = 120.0f;
     t->running = 0;
     t->follow_transport = 1;
@@ -572,8 +626,13 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
         t->pulse_sync_active = 1;
         t->blocks_since_last_pulse = 0;
         if (t->running) {
-            t->clock_pulses = (t->clock_pulses + 1) % 6; /* 6 pulses per 16th */
-            if (t->clock_pulses == 0) return advance_all(t, out_msgs, out_lens, max_out);
+            t->clock_pulses++;
+            if (t->clock_pulses >= swing_pulse_target(t)) {
+                t->clock_pulses = 0;
+                int fired = advance_all(t, out_msgs, out_lens, max_out);
+                t->swing_pulse_idx++;
+                return fired;
+            }
         }
         return 0;
     }
@@ -584,6 +643,7 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
             t->clock_pulses = 5; /* first 0xF8 bumps to 0 -> fires step 0 on the downbeat */
             t->sample_accum = 0;
             t->bar_step_count = 0;
+            t->swing_pulse_idx = 0;
         }
         return 0;
     }
@@ -663,6 +723,7 @@ static int acid_tick(void *instance, int frames, int sample_rate,
                 t->clock_pulses = 5;
                 t->sample_accum = 0;
                 t->bar_step_count = 0;
+                t->swing_pulse_idx = 0;
             } else if (cs == MOVE_CLOCK_STATUS_STOPPED && t->running) {
                 t->running = 0;
                 if (count < max_out) count += kill_all_notes(t, &out_msgs[count], &out_lens[count], max_out - count);
@@ -674,9 +735,12 @@ static int acid_tick(void *instance, int frames, int sample_rate,
 
     if (!t->pulse_sync_active) {
         t->sample_accum += (double)frames;
-        while (t->sample_accum >= t->samples_per_step && count < max_out - 4) {
-            t->sample_accum -= t->samples_per_step;
+        while (count < max_out - 4) {
+            double gap = t->samples_per_step * swing_gap_mult(t);
+            if (t->sample_accum < gap) break;
+            t->sample_accum -= gap;
             count += advance_all(t, &out_msgs[count], &out_lens[count], max_out - count);
+            t->swing_pulse_idx++;
         }
     }
 
@@ -784,6 +848,11 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         int v = parse_int(val, 4); if (v < 0 || v > 4) v = 4;
         t->reset_bars_idx = v;
         t->bar_step_count = 0;
+    } else if (strcmp(key, "swing") == 0) {
+        int v = parse_int(val, 50);
+        if (v < 50) v = 50;
+        if (v > 75) v = 75;
+        t->swing_pct = v;
     }
 }
 
@@ -819,6 +888,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     else if (strcmp(key, "scale") == 0) n = snprintf(buf, buf_len, "%d", t->scale);
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);
     else if (strcmp(key, "reset_bars") == 0) n = snprintf(buf, buf_len, "%d", t->reset_bars_idx);
+    else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%d", t->swing_pct);
     else if (strcmp(key, "chain_params") == 0) {
         /* Not actually consulted for midi_fx loading -- chain_midi.c reads
          * chain_params straight out of module.json on disk (parse_chain_params),
@@ -851,7 +921,8 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":-63},"
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
-            "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4}"
+            "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4},"
+            "{\"key\":\"swing\",\"name\":\"Swing\",\"type\":\"int\",\"min\":50,\"max\":75,\"step\":1,\"default\":50}"
             "]";
         n = snprintf(buf, buf_len, "%s", params);
     }
