@@ -118,11 +118,12 @@ typedef struct {
     int scale;            /* index into SCALES */
     int blend;             /* -63..64, bipolar velocity crossfade A<->B */
     int reset_bars_idx;   /* 0..3 -> {1,2,4,8} bars, 4 = Off */
-    float swing_pct;       /* 50.0-75.0, MPC-style 16th swing; 50 = straight.
-                            * Float with a 0.1 step (not int/1) so the knob
-                            * has ~250 increments across its range instead of
-                            * 25 -- an int step-1 version felt too twitchy
-                            * per detent on the hardware encoder. */
+    int swing_pct;         /* 50-75, MPC-style 16th swing; 50 = straight.
+                           * Whole percent, but the chain_param below is
+                           * declared "float" (like Length A/B) so the knob
+                           * rides the range-normalised curve instead of
+                           * one-step-per-detent -- an int chain_param over
+                           * this same 50-75 span felt too twitchy. */
     long swing_pulse_idx;  /* count of 16th pulses fired since Start -- pulse 0
                             * is always exactly on the grid, odd pulses land
                             * late and the following even pulse lands early by
@@ -853,9 +854,12 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         t->reset_bars_idx = v;
         t->bar_step_count = 0;
     } else if (strcmp(key, "swing") == 0) {
-        float v = parse_float(val, 50.0f);
-        if (v < 50.0f) v = 50.0f;
-        if (v > 75.0f) v = 75.0f;
+        /* Declared as a float chain_param for the range-normalised knob
+         * curve (see the struct comment) -- the wire value arrives like
+         * "62.000", so round rather than truncate, same as Length A/B. */
+        int v = (int)(parse_float(val, 50.0f) + 0.5f);
+        if (v < 50) v = 50;
+        if (v > 75) v = 75;
         t->swing_pct = v;
     }
 }
@@ -892,7 +896,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     else if (strcmp(key, "scale") == 0) n = snprintf(buf, buf_len, "%d", t->scale);
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);
     else if (strcmp(key, "reset_bars") == 0) n = snprintf(buf, buf_len, "%d", t->reset_bars_idx);
-    else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%.1f", t->swing_pct);
+    else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%d", t->swing_pct);
     else if (strcmp(key, "chain_params") == 0) {
         /* Not actually consulted for midi_fx loading -- chain_midi.c reads
          * chain_params straight out of module.json on disk (parse_chain_params),
@@ -926,7 +930,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4},"
-            "{\"key\":\"swing\",\"name\":\"Swing\",\"type\":\"float\",\"min\":50.0,\"max\":75.0,\"step\":0.1,\"default\":50.0,\"display_format\":\".1f\"}"
+            "{\"key\":\"swing\",\"name\":\"Swing\",\"type\":\"float\",\"min\":50,\"max\":75,\"step\":1,\"default\":50,\"display_format\":\".0f\"}"
             "]";
         n = snprintf(buf, buf_len, "%s", params);
     }
