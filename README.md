@@ -1,8 +1,5 @@
 # Acid — a generative acid-bassline MIDI FX for Ableton Move (Schwung)
 
-**v1.1.1** — the Advanced page (Offset / Direction / Jitter / Auto Gen)
-and six more scales. See the [Changelog](#changelog) below.
-
 Two independent generative sequencers, blended into one output, running as a
 [Schwung](https://github.com/charlesvestal/schwung) slot MIDI FX. Combination of influences from existing popular, acid sequencer generators.
 
