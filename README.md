@@ -1,7 +1,7 @@
 # Acid — a generative acid-bassline MIDI FX for Ableton Move (Schwung)
 
-**v1.1** — adds the Advanced page (Offset / Direction / Jitter / Auto Gen)
-and six more scales. v1.0 was the feature-complete first release.
+**v1.1.1** — the Advanced page (Offset / Direction / Jitter / Auto Gen)
+and six more scales. See the [Changelog](#changelog) below.
 
 Two independent generative sequencers, blended into one output, running as a
 [Schwung](https://github.com/charlesvestal/schwung) slot MIDI FX. Combination of influences from existing popular, acid sequencer generators.
@@ -191,6 +191,22 @@ src/
 scripts/
   build.sh  install.sh  Dockerfile
 ```
+
+## Changelog
+
+- **v1.1.1** — Offset A / Offset B knob feel: declared as normalised-curve
+  floats (like Length A/B and Swing) so they no longer step one value per
+  detent across the 0–31 span. No behaviour change.
+- **v1.1** — new **Advanced** page: per-sequencer **Offset** (read-side
+  step rotation) and **Direction** (Fwd / Rev / Pendulum), plus shared
+  **Jitter** (occasional skip / repeat / jump) and **Auto Gen** (re-roll
+  both sequencers every 1–32 bars). Six curated scales added after the
+  original six — Phrygian Dominant, Locrian, Whole Tone, Hungarian Minor,
+  Minor Blues, Chromatic — with the first six unchanged so stored `scale`
+  values keep their meaning.
+- **v1.0.1** — packaging only: installable as a custom module,
+  `min_host_version` 1.2.0.
+- **v1.0** — feature-complete first release.
 
 ## Credits & license
 

@@ -953,7 +953,11 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v >  ACID_MAX_TUNE) v =  ACID_MAX_TUNE;
             s->tune = v;
         } else if (strcmp(k, "offset") == 0) {
-            int v = parse_int(val, 0);
+            /* Declared as a float chain_param (like Length A/B and Swing) so
+             * the knob rides the range-normalised curve instead of stepping
+             * one-per-detent across the 0..31 span -- the wire value arrives
+             * like "7.000", so round rather than truncate. */
+            int v = (int)(parse_float(val, 0.0f) + 0.5f);
             if (v < 0) v = 0;
             if (v >= s->length) v = s->length - 1;
             s->offset = v;
@@ -1073,8 +1077,8 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4},"
             "{\"key\":\"swing\",\"name\":\"Swing\",\"type\":\"float\",\"min\":50,\"max\":75,\"step\":1,\"default\":50,\"display_format\":\".0f\"},"
-            "{\"key\":\"a_offset\",\"name\":\"Offset A\",\"type\":\"int\",\"min\":0,\"max\":31,\"step\":1,\"default\":0},"
-            "{\"key\":\"b_offset\",\"name\":\"Offset B\",\"type\":\"int\",\"min\":0,\"max\":31,\"step\":1,\"default\":0},"
+            "{\"key\":\"a_offset\",\"name\":\"Offset A\",\"type\":\"float\",\"min\":0,\"max\":31,\"step\":1,\"default\":0,\"display_format\":\".0f\"},"
+            "{\"key\":\"b_offset\",\"name\":\"Offset B\",\"type\":\"float\",\"min\":0,\"max\":31,\"step\":1,\"default\":0,\"display_format\":\".0f\"},"
             "{\"key\":\"a_dir\",\"name\":\"Direction A\",\"type\":\"enum\",\"options\":[\"Fwd\",\"Rev\",\"Pendulum\"],\"default\":0},"
             "{\"key\":\"b_dir\",\"name\":\"Direction B\",\"type\":\"enum\",\"options\":[\"Fwd\",\"Rev\",\"Pendulum\"],\"default\":0},"
             "{\"key\":\"jitter\",\"name\":\"Jitter\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.0,\"unit\":\"%\"},"
