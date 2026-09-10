@@ -1,6 +1,7 @@
 # Acid — a generative acid-bassline MIDI FX for Ableton Move (Schwung)
 
-**v1.0** — feature-complete first release.
+**v1.1** — adds the Advanced page (Offset / Direction / Jitter / Auto Gen)
+and six more scales. v1.0 was the feature-complete first release.
 
 Two independent generative sequencers, blended into one output, running as a
 [Schwung](https://github.com/charlesvestal/schwung) slot MIDI FX. Combination of influences from existing popular, acid sequencer generators.
@@ -34,16 +35,21 @@ Two independent generative sequencers, blended into one output, running as a
 - **Reset Both** (1/2/4/8 bars, or Off) periodically snaps both sequencers
   back to step 1 together. Off lets differently-lengthed A/B patterns drift
   as a genuine polymeter.
+- An **Advanced** page adds per-sequencer **Offset** (rotate which step
+  plays without rewriting the pattern) and **Direction** (Fwd / Rev /
+  Pendulum), plus shared **Jitter** (occasionally skip, repeat, or jump a
+  step) and **Auto Gen** (re-roll both sequencers every 1–32 bars).
 - No banks, no undo, no persistence in this version — Generate and Mutate
   only.
 
-## Pages (8 knobs each)
+## Pages
 
 | Page | Knobs |
 |---|---|
 | **SEQUENCE A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **SEQUENCE B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **Global** | Scale, Root, Tune B, Blend, Algo A, Algo B, Reset Both, Swing |
+| **Advanced** | Offset A, Offset B, Jitter, Auto Gen, Direction A, Direction B (6 of 8 slots) |
 
 ## What each knob does
 
@@ -75,8 +81,11 @@ Two independent generative sequencers, blended into one output, running as a
 
 ### Global
 
-- **Scale** — the scale both sequencers quantise to: Minor, Phrygian,
-  Harmonic Minor, Minor Pentatonic, Dorian, Major.
+- **Scale** — the scale both sequencers quantise to. The first six —
+  Minor, Phrygian, Harmonic Minor, Minor Pentatonic, Dorian, Major —
+  are followed by six acid/techno-leaning additions: Phrygian Dominant,
+  Locrian, Whole Tone, Hungarian Minor, Minor Blues, and Chromatic
+  (all 12 semitones — an effective "scale off").
 - **Root** — the key both sequencers play in (C…B). Authoritative and
   stable: playing a note into the slot transposes around this live (C4 =
   no shift) but never moves the knob.
@@ -104,6 +113,26 @@ Two independent generative sequencers, blended into one output, running as a
 - **Swing** (50-75%) — MPC-style 16th-note swing, shared by both
   sequencers so they stay locked together.  Works whether Acid is free-running or following
   an external MIDI clock.
+
+### Advanced
+
+- **Offset A / Offset B** (0…length−1) — rotates which stored step plays
+  on each tick, without touching the pattern itself. A read-side shift, so
+  it's live and reversible; re-clamped if you shorten Length below it.
+- **Direction A / Direction B** — **Fwd** (default), **Rev** (play the
+  pattern backwards), or **Pendulum** (run to the end, then back, bouncing
+  off each end without repeating it). Reset Both and transport start always
+  resume Pendulum travelling forward.
+- **Jitter** (0–100%) — per-step chance of perturbing *which* step plays,
+  never *when* — it's kept clear of the Swing timing entirely. On a hit it
+  does one of three things at even odds: skip an extra step, repeat the
+  step it just left, or jump to a random one. Draws from the same PRNG
+  stream as Mutate, so it stays deterministic relative to the seed. 0 =
+  off (default), and at 0 it's a complete no-op.
+- **Auto Gen** — Off, or every 1 / 2 / 4 / 8 / 16 / 32 bars, re-roll both
+  sequencers from a fresh seed (the same thing Generate does), on its own
+  bar counter independent of Reset Both. Set to the same interval as Reset
+  Both and both fire on the tick: regenerate, then snap to step 1.
 
 ## Install
 

@@ -2,7 +2,7 @@
   "id": "acid",
   "name": "Acid",
   "abbrev": "ACID",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "min_host_version": "1.2.0",
   "author": "sd88me",
   "description": "Dual generative acid-bassline sequencer, blendable algorithms, slot MIDI FX.",
@@ -27,7 +27,8 @@
             "a_length",
             "a_gate",
             { "label": "Seq B", "level": "seqB" },
-            { "label": "Global", "level": "global" }
+            { "label": "Global", "level": "global" },
+            { "label": "Advanced", "level": "advanced" }
           ],
           "knobs": [
             { "key": "a_generate", "short_name": "Generate" },
@@ -73,9 +74,29 @@
             "a_algo",
             "b_algo",
             "reset_bars",
-            "swing"
+            "swing",
+            { "label": "Advanced", "level": "advanced" }
           ],
           "knobs": ["scale", "root", "b_tune", "blend", "a_algo", "b_algo", "reset_bars", "swing"]
+        },
+        "advanced": {
+          "name": "Advanced",
+          "params": [
+            "a_offset",
+            "b_offset",
+            "jitter",
+            "auto_gen",
+            "a_dir",
+            "b_dir"
+          ],
+          "knobs": [
+            { "key": "a_offset", "short_name": "OffsetA" },
+            { "key": "b_offset", "short_name": "OffsetB" },
+            { "key": "jitter",   "short_name": "Jitter" },
+            { "key": "auto_gen", "short_name": "AutoGen" },
+            { "key": "a_dir",    "short_name": "DirA" },
+            { "key": "b_dir",    "short_name": "DirB" }
+          ]
         }
       }
     }
@@ -99,13 +120,20 @@
     { "key": "b_length",   "name": "Length B",   "type": "float", "min": 2, "max": 32, "step": 1, "default": 16, "display_format": ".0f" },
     { "key": "b_gate",     "name": "Gate B",     "type": "float", "min": 0.05, "max": 1.0, "step": 0.01, "default": 0.5, "unit": "%" },
 
-    { "key": "scale",        "name": "Scale",      "type": "enum", "options": ["Minor", "Phrygian", "HarmMinor", "MinPent", "Dorian", "Major"], "default": 0 },
+    { "key": "scale",        "name": "Scale",      "type": "enum", "options": ["Minor", "Phrygian", "HarmMinor", "MinPent", "Dorian", "Major", "PhrygDom", "Locrian", "WholeTone", "HungMinor", "MinBlues", "Chromatic"], "default": 0 },
     { "key": "root",         "name": "Root",       "type": "enum", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": 9 },
     { "key": "b_tune",       "name": "Tune B",     "type": "int",  "min": -24, "max": 24, "step": 1, "default": 0 },
     { "key": "blend",        "name": "Blend",      "type": "int",  "min": -63, "max": 64, "step": 1, "default": -63 },
     { "key": "a_algo",       "name": "Algo A",     "type": "int",  "min": 1, "max": 16, "step": 1, "default": 1 },
     { "key": "b_algo",       "name": "Algo B",     "type": "int",  "min": 1, "max": 16, "step": 1, "default": 1 },
     { "key": "reset_bars",   "name": "Reset Both", "type": "enum", "options": ["1 bar", "2 bars", "4 bars", "8 bars", "Off"], "default": 4 },
-    { "key": "swing",        "name": "Swing",      "type": "float", "min": 50, "max": 75, "step": 1, "default": 50, "display_format": ".0f" }
+    { "key": "swing",        "name": "Swing",      "type": "float", "min": 50, "max": 75, "step": 1, "default": 50, "display_format": ".0f" },
+
+    { "key": "a_offset", "name": "Offset A",    "type": "int",  "min": 0, "max": 31, "step": 1, "default": 0 },
+    { "key": "b_offset", "name": "Offset B",    "type": "int",  "min": 0, "max": 31, "step": 1, "default": 0 },
+    { "key": "a_dir",    "name": "Direction A", "type": "enum", "options": ["Fwd", "Rev", "Pendulum"], "default": 0 },
+    { "key": "b_dir",    "name": "Direction B", "type": "enum", "options": ["Fwd", "Rev", "Pendulum"], "default": 0 },
+    { "key": "jitter",   "name": "Jitter",      "type": "float", "min": 0.0, "max": 1.0, "step": 0.01, "default": 0.0, "unit": "%" },
+    { "key": "auto_gen", "name": "Auto Gen",    "type": "enum", "options": ["Off", "1 bar", "2 bars", "4 bars", "8 bars", "16 bars", "32 bars"], "default": 0 }
   ]
 }

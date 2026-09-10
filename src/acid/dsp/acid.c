@@ -61,7 +61,21 @@ static const scale_t SCALES[] = {
     { "HarmMinor", {0, 2, 3, 5, 7, 8, 11},         7 },
     { "MinPent",   {0, 3, 5, 7, 10, 0, 0},         5 },
     { "Dorian",    {0, 2, 3, 5, 7, 9, 10},         7 },
-    { "Major",     {0, 2, 4, 5, 7, 9, 11},         7 }
+    { "Major",     {0, 2, 4, 5, 7, 9, 11},         7 },
+    /* Appended for v1.1 -- a curated acid/techno-leaning set, not an attempt
+     * at completeness. Order matters: these must stay at indices 6..11 so any
+     * stored/automated `scale` value <= 5 keeps its meaning. note_for_step(),
+     * gen_primary(), gen_secondary() and mutate_pattern() all read SCALES[]
+     * generically, and NUM_SCALES is sizeof-derived, so nothing else changes
+     * with the list. Chromatic (len 12) is the one that functionally answers
+     * "scale defeat" without a second code path -- degrees[12]/len already
+     * supports it. */
+    { "PhrygDom",  {0, 1, 4, 5, 7, 8, 10},         7 },  /* Phrygian Dominant / Spanish */
+    { "Locrian",   {0, 1, 3, 5, 6, 8, 10},         7 },
+    { "WholeTone", {0, 2, 4, 6, 8, 10},            6 },
+    { "HungMinor", {0, 2, 3, 6, 7, 8, 11},         7 },  /* Hungarian / Gypsy Minor */
+    { "MinBlues",  {0, 3, 5, 6, 7, 10},            6 },
+    { "Chromatic", {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 12 }
 };
 #define NUM_SCALES ((int)(sizeof(SCALES) / sizeof(SCALES[0])))
 
@@ -77,6 +91,12 @@ static const uint8_t VEL_PYRAMID[16] = {0, 14, 15, 6, 1, 2, 10, 3, 12, 13, 11, 5
 /* Bar-length lookup for the Reset Both control: index -> 16th-notes per bar
  * boundary (index 4 = "Off", handled separately, never indexes this). */
 static const int BAR_STEPS[4] = {16, 32, 64, 128};
+
+/* Auto Gen (Advanced page) bar-boundary lookup: index 1..6 -> 16th-notes per
+ * automatic-regenerate boundary; index 0 = "Off", handled separately and
+ * never indexes this. Kept separate from BAR_STEPS[] on purpose -- Auto Gen's
+ * enum puts "Off" first and reaches further (up to 32 bars) than Reset Both. */
+static const int AUTO_GEN_BAR_STEPS[6] = {16, 32, 64, 128, 256, 512};
 
 typedef struct {
     /* PRNG -- xorshift32. `rng` is the live, ever-advancing generator state
@@ -97,6 +117,13 @@ typedef struct {
     int octave_range;   /* 1..3 */
     float gate;         /* 0.05..1.0, fraction of a step */
     int algo;           /* 1..16 */
+
+    /* Advanced page -- per-sequencer playback modifiers. Offset is read-side
+     * only (rotates which stored step plays, never touches steps[]/degrees[]/
+     * octaves[]); Direction changes how `position` advances each tick. */
+    int offset;         /* 0..length-1 rotation applied when reading a step */
+    int dir;            /* 0=Fwd, 1=Rev, 2=Pendulum */
+    int pendulum_fwd;   /* dir==2 only: 1 = currently travelling forward */
 
     /* Playback */
     int tune;           /* semitone offset from the shared key; Seq A is always
@@ -147,6 +174,14 @@ typedef struct {
     int clock_stable_count;
 
     long bar_step_count;  /* 16th-notes advanced since the last bar-reset */
+
+    /* Advanced page -- shared across both sequencers. */
+    float jitter;              /* 0.0..1.0: per-tick chance of perturbing WHICH
+                               * step plays (not WHEN -- kept clear of swing) */
+    int auto_gen_idx;          /* 0=Off, 1..6 -> {1,2,4,8,16,32} bars */
+    long auto_gen_step_count;  /* own counter, parallel to bar_step_count, so
+                               * Auto Gen and Reset Both keep independent
+                               * intervals rather than sharing one */
 } acid_inst_t;
 
 static const host_api_v1_t *g_host = NULL;
@@ -354,6 +389,13 @@ static void mutate_pattern(acid_seq_t *s, int scale_idx) {
 /* Playback                                                                */
 /* ---------------------------------------------------------------------- */
 
+/* Offset (Advanced page) is a pure read-side rotation: the stored pattern is
+ * never modified, we just index it `offset` steps further along. length >= 2
+ * and both operands are non-negative, so the result is always in range. */
+static int play_idx(const acid_seq_t *s, int pos) {
+    return (pos + s->offset) % s->length;
+}
+
 static int note_for_step(const acid_seq_t *s, int scale_idx, int root, int transpose, int step_idx) {
     const scale_t *sc = &SCALES[scale_idx];
     /* Base in the C1 octave, matching tb3po -- keeps the emitted range well
@@ -367,8 +409,26 @@ static int note_for_step(const acid_seq_t *s, int scale_idx, int root, int trans
     return note;
 }
 
-static int next_position(const acid_seq_t *s) {
-    return (s->position + 1) % s->length;
+/* Advance `position` one step per the Direction mode. Pendulum is stateful --
+ * it flips pendulum_fwd at each end -- so this takes a mutable pointer rather
+ * than staying the pure function it was. Endpoints are turn-around points,
+ * not repeated: 0,1,2,..,N-1,N-2,..,1,0,1,.. */
+static int next_position(acid_seq_t *s) {
+    int n = s->length;
+    if (n <= 1) return 0;
+    switch (s->dir) {
+        case 1: /* Rev */
+            return (s->position - 1 + n) % n;
+        case 2: /* Pendulum */
+            if (s->pendulum_fwd) {
+                if (s->position >= n - 1) { s->pendulum_fwd = 0; return n - 2; }
+                return s->position + 1;
+            }
+            if (s->position <= 0) { s->pendulum_fwd = 1; return 1; }
+            return s->position - 1;
+        default: /* Fwd */
+            return (s->position + 1) % n;
+    }
 }
 
 /* Blend scales each sequencer's OWN velocity by a 0-100%
@@ -477,7 +537,8 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int prev_pos, int vel_
                               uint8_t out_msgs[][3], int out_lens[], int max_out) {
     acid_seq_t *s = &t->seq[seq_idx];
     int count = 0;
-    uint8_t kind = s->steps[s->position];
+    int pidx = play_idx(s, s->position);
+    uint8_t kind = s->steps[pidx];
 
     if (kind == STEP_REST || vel_scale <= 0) {
         if (count < max_out) count += kill_seq_note(t, seq_idx, &out_msgs[count], &out_lens[count], max_out - count);
@@ -485,14 +546,14 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int prev_pos, int vel_
         return count;
     }
 
-    int note = note_for_step(s, t->scale, t->root, t->live_transpose, s->position);
+    int note = note_for_step(s, t->scale, t->root, t->live_transpose, pidx);
     int is_accent = (kind == STEP_ACCENT);
     int base_vel = is_accent ? 118 : 72;
     int vel = (base_vel * vel_scale) / 127;
     if (vel < 1) vel = 1;
     if (vel > 127) vel = 127;
 
-    int was_slide = (prev_pos >= 0 && s->steps[prev_pos] == STEP_SLIDE);
+    int was_slide = (prev_pos >= 0 && s->steps[play_idx(s, prev_pos)] == STEP_SLIDE);
 
     if (was_slide) {
         if (!s->portamento_on && count < max_out) {
@@ -547,13 +608,58 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
         t->bar_step_count = 0;
     }
 
+    /* Auto Gen (Advanced) -- its own bar counter, independent of Reset Both's.
+     * On its boundary, re-roll both sequencers from a fresh per-seq seed (the
+     * same call the "generate" param makes). Done before the position snap /
+     * emit below, so the freshly generated pattern is what plays this tick. If
+     * Auto Gen and Reset Both are set to the same interval they fire on the
+     * same tick: regenerate first, then snap to step 0 -- intended. */
+    if (t->auto_gen_idx != 0) {
+        t->auto_gen_step_count++;
+        if (t->auto_gen_step_count >= AUTO_GEN_BAR_STEPS[t->auto_gen_idx - 1]) {
+            t->auto_gen_step_count = 0;
+            for (int i = 0; i < NUM_SEQS; i++) {
+                acid_seq_t *s = &t->seq[i];
+                regenerate_pattern(s, t->scale, rng_next_u32(&s->rng));
+                if (s->position >= s->length) s->position = s->length - 1;
+            }
+        }
+    } else {
+        t->auto_gen_step_count = 0;
+    }
+
     int vel_a, vel_b;
     compute_blend_velocities(t->blend, &vel_a, &vel_b);
 
     for (int i = 0; i < NUM_SEQS; i++) {
         acid_seq_t *s = &t->seq[i];
         int prev = s->position;
-        s->position = forced_reset ? 0 : next_position(s);
+        if (forced_reset) {
+            s->position = 0;
+            s->pendulum_fwd = 1;  /* Reset Both is authoritative -- pendulum resumes forward */
+        } else {
+            int np = next_position(s);
+            /* Jitter (Advanced) -- perturb WHICH step plays, never WHEN, so it
+             * stays independent of swing_gap_mult()/swing_delay_frac(). Rolls
+             * off the same per-seq PRNG stream Mutate draws from, so it stays
+             * deterministic relative to the seed. Three outcomes, split evenly
+             * for now: skip an extra step, repeat the step just left, or jump
+             * somewhere random. The exact split is an ear-check call -- flagged
+             * like the Algo blend curve and the VelPyra table, not settled. */
+            if (t->jitter > 0.0f && s->length > 1 &&
+                rng_next_f(&s->rng) < t->jitter) {
+                switch (rng_next_u32(&s->rng) % 3u) {
+                    case 0: np = (np + 1) % s->length; break;
+                    case 1: np = prev; break;
+                    default: {
+                        int r = (int)(rng_next_f(&s->rng) * (float)s->length);
+                        if (r >= s->length) r = s->length - 1;
+                        np = r;
+                    }
+                }
+            }
+            s->position = np;
+        }
         int vel_scale = (i == SEQ_A) ? vel_a : vel_b;
         if (count < max_out) {
             count += emit_step_for_seq(t, i, prev, vel_scale, &out_msgs[count], &out_lens[count], max_out - count);
@@ -584,6 +690,7 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
         s->algo = 1;
         s->tune = 0;
         s->last_note_on = -1;
+        s->pendulum_fwd = 1; /* offset/dir default to 0 (Fwd, no rotation) via calloc */
     }
     t->root = 9; /* A, matches tb3po's default */
     t->live_transpose = 0;
@@ -644,10 +751,14 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
     if (status == 0xFA) { /* Start */
         if (t->follow_transport) {
             t->running = 1;
-            for (int i = 0; i < NUM_SEQS; i++) t->seq[i].position = t->seq[i].length - 1;
+            for (int i = 0; i < NUM_SEQS; i++) {
+                t->seq[i].position = t->seq[i].length - 1;
+                t->seq[i].pendulum_fwd = 1;
+            }
             t->clock_pulses = 5; /* first 0xF8 bumps to 0 -> fires step 0 on the downbeat */
             t->sample_accum = 0;
             t->bar_step_count = 0;
+            t->auto_gen_step_count = 0;
             t->swing_pulse_idx = 0;
         }
         return 0;
@@ -724,10 +835,14 @@ static int acid_tick(void *instance, int frames, int sample_rate,
         if (t->clock_stable_count >= 8) {
             if (cs == MOVE_CLOCK_STATUS_RUNNING && !t->running) {
                 t->running = 1;
-                for (int i = 0; i < NUM_SEQS; i++) t->seq[i].position = t->seq[i].length - 1;
+                for (int i = 0; i < NUM_SEQS; i++) {
+                    t->seq[i].position = t->seq[i].length - 1;
+                    t->seq[i].pendulum_fwd = 1;
+                }
                 t->clock_pulses = 5;
                 t->sample_accum = 0;
                 t->bar_step_count = 0;
+                t->auto_gen_step_count = 0;
                 t->swing_pulse_idx = 0;
             } else if (cs == MOVE_CLOCK_STATUS_STOPPED && t->running) {
                 t->running = 0;
@@ -757,7 +872,7 @@ static int acid_tick(void *instance, int frames, int sample_rate,
             s->gate_samples_remaining -= frames;
             if (s->gate_samples_remaining <= 0) {
                 s->gate_samples_remaining = 0;
-                if (s->steps[s->position] != STEP_SLIDE && count < max_out) {
+                if (s->steps[play_idx(s, s->position)] != STEP_SLIDE && count < max_out) {
                     count += kill_seq_note(t, i, &out_msgs[count], &out_lens[count], max_out - count);
                 }
             }
@@ -821,6 +936,7 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v > MAX_STEPS) v = MAX_STEPS;
             s->length = v;
             if (s->position >= v) s->position = v - 1;
+            if (s->offset >= v) s->offset = v - 1;  /* keep Offset < the new length */
         } else if (strcmp(k, "gate") == 0) {
             float v = parse_float(val, 0.5f);
             if (v < 0.05f) v = 0.05f;
@@ -836,6 +952,17 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
             if (v < -ACID_MAX_TUNE) v = -ACID_MAX_TUNE;
             if (v >  ACID_MAX_TUNE) v =  ACID_MAX_TUNE;
             s->tune = v;
+        } else if (strcmp(k, "offset") == 0) {
+            int v = parse_int(val, 0);
+            if (v < 0) v = 0;
+            if (v >= s->length) v = s->length - 1;
+            s->offset = v;
+        } else if (strcmp(k, "dir") == 0) {
+            int v = parse_int(val, 0);
+            if (v < 0) v = 0;
+            if (v > 2) v = 2;
+            if (v == 2 && s->dir != 2) s->pendulum_fwd = 1; /* enter Pendulum travelling forward */
+            s->dir = v;
         }
         return;
     }
@@ -861,6 +988,17 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         if (v < 50) v = 50;
         if (v > 75) v = 75;
         t->swing_pct = v;
+    } else if (strcmp(key, "jitter") == 0) {
+        float v = parse_float(val, 0.0f);
+        if (v < 0.0f) v = 0.0f;
+        if (v > 1.0f) v = 1.0f;
+        t->jitter = v;
+    } else if (strcmp(key, "auto_gen") == 0) {
+        int v = parse_int(val, 0);
+        if (v < 0) v = 0;
+        if (v > 6) v = 6;
+        t->auto_gen_idx = v;
+        t->auto_gen_step_count = 0;
     }
 }
 
@@ -885,6 +1023,8 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
         else if (strcmp(k, "gate") == 0) n = snprintf(buf, buf_len, "%.3f", s->gate);
         else if (strcmp(k, "algo") == 0) n = snprintf(buf, buf_len, "%d", s->algo);
         else if (strcmp(k, "tune") == 0) n = snprintf(buf, buf_len, "%d", s->tune);
+        else if (strcmp(k, "offset") == 0) n = snprintf(buf, buf_len, "%d", s->offset);
+        else if (strcmp(k, "dir") == 0) n = snprintf(buf, buf_len, "%d", s->dir);
         else if (strcmp(k, "generate") == 0 || strcmp(k, "mutate") == 0) n = snprintf(buf, buf_len, "off");
         else return -1;
         if (n < 0) return -1;
@@ -897,6 +1037,8 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);
     else if (strcmp(key, "reset_bars") == 0) n = snprintf(buf, buf_len, "%d", t->reset_bars_idx);
     else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%d", t->swing_pct);
+    else if (strcmp(key, "jitter") == 0) n = snprintf(buf, buf_len, "%.3f", t->jitter);
+    else if (strcmp(key, "auto_gen") == 0) n = snprintf(buf, buf_len, "%d", t->auto_gen_idx);
     else if (strcmp(key, "chain_params") == 0) {
         /* Not actually consulted for midi_fx loading -- chain_midi.c reads
          * chain_params straight out of module.json on disk (parse_chain_params),
@@ -923,14 +1065,20 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"b_octaves\",\"name\":\"Octaves B\",\"type\":\"int\",\"min\":1,\"max\":3,\"step\":1,\"default\":2},"
             "{\"key\":\"b_length\",\"name\":\"Length B\",\"type\":\"float\",\"min\":2,\"max\":32,\"step\":1,\"default\":16,\"display_format\":\".0f\"},"
             "{\"key\":\"b_gate\",\"name\":\"Gate B\",\"type\":\"float\",\"min\":0.05,\"max\":1.0,\"step\":0.01,\"default\":0.5,\"unit\":\"%\"},"
-            "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\"],\"default\":0},"
+            "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\",\"PhrygDom\",\"Locrian\",\"WholeTone\",\"HungMinor\",\"MinBlues\",\"Chromatic\"],\"default\":0},"
             "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
             "{\"key\":\"b_tune\",\"name\":\"Tune B\",\"type\":\"int\",\"min\":-24,\"max\":24,\"step\":1,\"default\":0},"
             "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":-63},"
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"reset_bars\",\"name\":\"Reset Both\",\"type\":\"enum\",\"options\":[\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"Off\"],\"default\":4},"
-            "{\"key\":\"swing\",\"name\":\"Swing\",\"type\":\"float\",\"min\":50,\"max\":75,\"step\":1,\"default\":50,\"display_format\":\".0f\"}"
+            "{\"key\":\"swing\",\"name\":\"Swing\",\"type\":\"float\",\"min\":50,\"max\":75,\"step\":1,\"default\":50,\"display_format\":\".0f\"},"
+            "{\"key\":\"a_offset\",\"name\":\"Offset A\",\"type\":\"int\",\"min\":0,\"max\":31,\"step\":1,\"default\":0},"
+            "{\"key\":\"b_offset\",\"name\":\"Offset B\",\"type\":\"int\",\"min\":0,\"max\":31,\"step\":1,\"default\":0},"
+            "{\"key\":\"a_dir\",\"name\":\"Direction A\",\"type\":\"enum\",\"options\":[\"Fwd\",\"Rev\",\"Pendulum\"],\"default\":0},"
+            "{\"key\":\"b_dir\",\"name\":\"Direction B\",\"type\":\"enum\",\"options\":[\"Fwd\",\"Rev\",\"Pendulum\"],\"default\":0},"
+            "{\"key\":\"jitter\",\"name\":\"Jitter\",\"type\":\"float\",\"min\":0.0,\"max\":1.0,\"step\":0.01,\"default\":0.0,\"unit\":\"%\"},"
+            "{\"key\":\"auto_gen\",\"name\":\"Auto Gen\",\"type\":\"enum\",\"options\":[\"Off\",\"1 bar\",\"2 bars\",\"4 bars\",\"8 bars\",\"16 bars\",\"32 bars\"],\"default\":0}"
             "]";
         n = snprintf(buf, buf_len, "%s", params);
     }

@@ -24,7 +24,6 @@ static void mock_log(const char *msg) { (void)msg; /* silence by default */ }
 
 static int g_note_on = 0, g_note_off = 0, g_cc = 0;
 static int g_min_note = 200, g_max_note = -1;
-static int g_last_root_note = -1;
 
 static void observe(const uint8_t msg[3], int len, long tick_idx) {
     if (len < 1) return;
@@ -81,7 +80,22 @@ int main(void) {
     api->set_param(inst, "blend", "0");
     api->set_param(inst, "reset_bars", "4"); /* Off, to start -- see polymeter drift */
 
-    char buf[512];
+    /* Advanced page: exercise the new paths for the whole run -- Pendulum on
+     * A, Rev on B, a read-side Offset on each, Jitter, and Auto Gen re-rolling
+     * both sequencers every bar. The summary assertions (note range, on/off
+     * balance) then cover Direction keeping position in [0,length) across an
+     * extended tick run and Auto Gen not wedging the output stream. Auto Gen
+     * (1 bar) and Reset Both (armed to 1 bar at the halfway point) end up
+     * firing on the same tick for the second half -- the interaction flagged
+     * in the handoff's open items. */
+    api->set_param(inst, "a_dir", "2");     /* Pendulum */
+    api->set_param(inst, "b_dir", "1");     /* Rev */
+    api->set_param(inst, "a_offset", "3");
+    api->set_param(inst, "b_offset", "2");
+    api->set_param(inst, "jitter", "0.35");
+    api->set_param(inst, "auto_gen", "1");  /* re-roll both every 1 bar */
+
+    char buf[4096];
     int n;
     n = api->get_param(inst, "chain_params", buf, sizeof(buf));
     printf("chain_params length = %d (expect > 0, < %zu)\n", n, sizeof(buf));
@@ -92,7 +106,15 @@ int main(void) {
     n = api->get_param(inst, "b_algo", buf, sizeof(buf));
     printf("b_algo readback = %.*s\n", n, buf);
     n = api->get_param(inst, "b_tune", buf, sizeof(buf));
-    printf("b_tune readback = %.*s (expect 7)\n\n", n, buf);
+    printf("b_tune readback = %.*s (expect 7)\n", n, buf);
+    n = api->get_param(inst, "a_dir", buf, sizeof(buf));
+    printf("a_dir readback = %.*s (expect 2)\n", n, buf);
+    n = api->get_param(inst, "a_offset", buf, sizeof(buf));
+    printf("a_offset readback = %.*s (expect 3)\n", n, buf);
+    n = api->get_param(inst, "jitter", buf, sizeof(buf));
+    printf("jitter readback = %.*s (expect ~0.350)\n", n, buf);
+    n = api->get_param(inst, "auto_gen", buf, sizeof(buf));
+    printf("auto_gen readback = %.*s (expect 1)\n\n", n, buf);
 
     /* Start transport. */
     uint8_t start_msg[1] = { 0xFA };

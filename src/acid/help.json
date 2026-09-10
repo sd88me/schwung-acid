@@ -88,6 +88,26 @@
         "accents. In between",
         "blends the two."
       ]
+    },
+    {
+      "title": "Advanced",
+      "lines": [
+        "Offset A/B: rotate",
+        "which step plays, 0",
+        "to length-1. The",
+        "pattern is unchanged.",
+        "Direction A/B: Fwd,",
+        "Rev, or Pendulum",
+        "(bounce at the ends).",
+        "Jitter: chance each",
+        "step of a skip,",
+        "repeat, or jump --",
+        "perturbs which step,",
+        "not the timing.",
+        "Auto Gen: re-roll",
+        "both sequencers every",
+        "1-32 bars, or Off."
+      ]
     }
   ]
 }
