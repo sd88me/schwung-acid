@@ -194,18 +194,15 @@ scripts/
 
 ## Changelog
 
-- **v1.2.1** — new **Chain** Blend Mode: call and response. A plays a full
-  pass of its pattern, then B answers with a full pass, alternating; Blend
-  sets the pass ratio (centre 1:1, up to 8:1 either way). Use Tune B for the
-  answer's interval. Reset Both restarts the chain from A. Still one
-  monophonic line.
 - **v1.2.0** — **Preset / state save fixed**: Acid now implements the host's
   `state` contract, so Save / Save As and module presets store and recall the
   exact sequence (both patterns and PRNG state) and every parameter, instead
   of failing with "could not read module state". New **Blend Mode** (Morph,
-  Split, Fill, XOR, Lock) replaces the old velocity-crossfade Blend, which
+  Split, Fill, XOR, Lock, Chain) replaces the old velocity-crossfade Blend, which
   layered both sequencers into a busy two-voice stack; every mode now
-  outputs one monophonic line. Presets saved before this load as Morph.
+  outputs one monophonic line. **Chain** is call and response: A plays a
+  full pass of its pattern, then B answers with a full pass, and Blend sets
+  the pass ratio. Presets saved before this load as Morph.
   Page layout: Global is now Scale, Root, Tune B, Reset Both, Algo A/B,
   Blend Mode, Blend; **Swing moved to Advanced** (knob 4).
 - **v1.1.1** — Offset A / Offset B knob feel: declared as normalised-curve
