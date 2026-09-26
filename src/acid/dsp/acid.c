@@ -144,6 +144,10 @@ typedef struct {
                            * our own output) never moves the Root knob/field */
     int scale;            /* index into SCALES */
     int blend;             /* -63..64, A<->B sweep; meaning depends on blend_mode */
+    int chain_side;        /* Chain mode: 0 = A's phrase, 1 = B's */
+    int chain_pass;        /* passes completed on the current side */
+    int chain_step;        /* steps played in the current pass */
+    int chain_fresh;       /* 1 = next tick begins the chain from the top */
     int blend_mode;        /* BM_* -- see blend_pick() */
     int reset_bars_idx;   /* 0..3 -> {1,2,4,8} bars, 4 = Off */
     int swing_pct;         /* 50-75, MPC-style 16th swing; 50 = straight.
@@ -443,8 +447,10 @@ static int next_position(acid_seq_t *s) {
  *   Fill  -- OR, A priority: B plays where A rests.
  *   XOR   -- plays where exactly one of A/B has a note.
  *   Lock  -- AND: plays (A's note) only where both have a note.
+ *   Chain -- call and response: A plays a full pass, then B, then A...
+ *            Blend sets the pass ratio (see chain_counts()). Not per step.
  * The logic modes sweep A -> logic result (centre) -> B. */
-enum { BM_MORPH = 0, BM_SPLIT, BM_FILL, BM_XOR, BM_LOCK, NUM_BLEND_MODES };
+enum { BM_MORPH = 0, BM_SPLIT, BM_FILL, BM_XOR, BM_LOCK, BM_CHAIN, NUM_BLEND_MODES };
 
 static const uint8_t BLEND_THRESH[16] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
 
@@ -600,6 +606,57 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int pitch_seq, int pre
     return count;
 }
 
+/* Chain mode: passes each side plays before handing over. Blend w (0 = A
+ * alone .. 1 = B alone) maps to the B:A ratio r = w/(1-w): centre = 1:1,
+ * w = 0.25 -> A x3 : B x1, w = 0.75 -> A x1 : B x3, capped at 8; the far ends
+ * are A only / B only. */
+static void chain_counts(const acid_inst_t *t, int *na, int *nb) {
+    float w = (float)(t->blend + 63) / 127.0f;
+    if (w <= 0.02f) { *na = 1; *nb = 0; return; }
+    if (w >= 0.98f) { *na = 0; *nb = 1; return; }
+    float r = w / (1.0f - w);
+    if (r <= 1.0f) { *na = (int)(1.0f / r + 0.5f); *nb = 1; }
+    else           { *na = 1; *nb = (int)(r + 0.5f); }
+    if (*na > 8) *na = 8;
+    if (*nb > 8) *nb = 8;
+}
+
+/* Park a sequencer one step before its first step, so the next
+ * next_position() lands on it: Fwd -> 0, Rev -> length-1, Pendulum -> 0
+ * heading forward. */
+static void chain_start_pass(acid_seq_t *s) {
+    if (s->dir == 1)      s->position = 0;               /* Rev: next = length-1 */
+    else if (s->dir == 2) { s->position = 1; s->pendulum_fwd = 0; } /* next = 0 */
+    else                  s->position = s->length - 1;   /* Fwd: next = 0 */
+    if (s->dir != 2) s->pendulum_fwd = 1;
+}
+
+/* Called at the top of a tick in Chain mode: begin the chain, or finish a
+ * pass (one pass = `length` steps) and hand over when the side's count of
+ * passes is done. */
+static int chain_begin_tick(acid_inst_t *t) {
+    int na, nb;
+    chain_counts(t, &na, &nb);
+    if (t->chain_fresh) {
+        t->chain_fresh = 0;
+        t->chain_side = (na > 0) ? 0 : 1;
+        t->chain_pass = 0;
+    } else if (t->chain_step >= t->seq[t->chain_side].length) {
+        t->chain_pass++;
+        int n = t->chain_side ? nb : na;
+        if (t->chain_pass >= n) {
+            int other = !t->chain_side;
+            if ((other ? nb : na) > 0) t->chain_side = other;
+            t->chain_pass = 0;
+        }
+    } else {
+        return 0;   /* mid-pass */
+    }
+    chain_start_pass(&t->seq[t->chain_side]);
+    t->chain_step = 0;
+    return 1;
+}
+
 /* Advances both sequencers by one 16th-note tick, applies the Reset Both
  * bar-boundary snap when armed, and emits through the Blend crossfade.
  * Each sequencer wraps independently at its own Length every tick -- that
@@ -641,9 +698,21 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
     }
 
     int prev[NUM_SEQS];
+    int chain = (t->blend_mode == BM_CHAIN);
+    if (chain) {
+        if (forced_reset) {
+            /* Reset Both: the chain restarts at the top of A's phrase. */
+            t->chain_fresh = 0; t->chain_side = 0; t->chain_pass = 0; t->chain_step = 0;
+            chain_start_pass(&t->seq[SEQ_A]);
+        } else {
+            chain_begin_tick(t);
+        }
+    }
     for (int i = 0; i < NUM_SEQS; i++) {
         acid_seq_t *s = &t->seq[i];
         prev[i] = s->position;
+        if (chain && i != t->chain_side) continue;   /* the resting side holds still */
+        if (chain && t->chain_step == 0) prev[i] = -1; /* a pass opens cold: no slide in from its parked step */
         if (forced_reset) {
             s->position = 0;
             s->pendulum_fwd = 1;  /* Reset Both is authoritative -- pendulum resumes forward */
@@ -672,11 +741,14 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
         }
     }
 
+    if (chain) t->chain_step++;
+
     /* Both positions are settled, so Blend Mode can see both steps. */
     int gate_a = t->seq[SEQ_A].steps[play_idx(&t->seq[SEQ_A], t->seq[SEQ_A].position)] != STEP_REST;
     int gate_b = t->seq[SEQ_B].steps[play_idx(&t->seq[SEQ_B], t->seq[SEQ_B].position)] != STEP_REST;
     int pitch_from_b;
-    int pick = blend_pick(t, gate_a, gate_b, &pitch_from_b);
+    int pick = chain ? t->chain_side : blend_pick(t, gate_a, gate_b, &pitch_from_b);
+    if (chain) pitch_from_b = 0;
 
     /* Muted sequencer first, so its note-off can never land after (and cut)
      * the audible sequencer's note-on when both share a pitch. */
@@ -724,7 +796,7 @@ static void *acid_create_instance(const char *module_dir, const char *config_jso
     t->blend = -63; /* Seq A alone until Blend is dialled up */
     t->reset_bars_idx = 4; /* Off */
     t->swing_pct = 50; /* straight */
-    t->swing_pulse_idx = 0;
+    t->swing_pulse_idx = 0; t->chain_fresh = 1;
     t->bpm = 120.0f;
     t->running = 0;
     t->follow_transport = 1;
@@ -785,7 +857,7 @@ static int acid_process_midi(void *instance, const uint8_t *in_msg, int in_len,
             t->sample_accum = 0;
             t->bar_step_count = 0;
             t->auto_gen_step_count = 0;
-            t->swing_pulse_idx = 0;
+            t->swing_pulse_idx = 0; t->chain_fresh = 1;
         }
         return 0;
     }
@@ -869,7 +941,7 @@ static int acid_tick(void *instance, int frames, int sample_rate,
                 t->sample_accum = 0;
                 t->bar_step_count = 0;
                 t->auto_gen_step_count = 0;
-                t->swing_pulse_idx = 0;
+                t->swing_pulse_idx = 0; t->chain_fresh = 1;
             } else if (cs == MOVE_CLOCK_STATUS_STOPPED && t->running) {
                 t->running = 0;
                 if (count < max_out) count += kill_all_notes(t, &out_msgs[count], &out_lens[count], max_out - count);
@@ -1012,7 +1084,9 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         if (v > 64) v = 64;
         t->blend = v;
     } else if (strcmp(key, "blend_mode") == 0) {
-        int v = parse_int(val, 0); if (v < 0 || v >= NUM_BLEND_MODES) v = 0; t->blend_mode = v;
+        int v = parse_int(val, 0); if (v < 0 || v >= NUM_BLEND_MODES) v = 0;
+        if (v == BM_CHAIN && t->blend_mode != BM_CHAIN) t->chain_fresh = 1;
+        t->blend_mode = v;
     } else if (strcmp(key, "reset_bars") == 0) {
         int v = parse_int(val, 4); if (v < 0 || v > 4) v = 4;
         t->reset_bars_idx = v;
@@ -1222,7 +1296,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\",\"PhrygDom\",\"Locrian\",\"WholeTone\",\"HungMinor\",\"MinBlues\",\"Chromatic\"],\"default\":0},"
             "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
             "{\"key\":\"b_tune\",\"name\":\"Tune B\",\"type\":\"int\",\"min\":-24,\"max\":24,\"step\":1,\"default\":0},"
-            "{\"key\":\"blend_mode\",\"name\":\"Blend Mode\",\"type\":\"enum\",\"options\":[\"Morph\",\"Split\",\"Fill\",\"XOR\",\"Lock\"],\"default\":0},"
+            "{\"key\":\"blend_mode\",\"name\":\"Blend Mode\",\"type\":\"enum\",\"options\":[\"Morph\",\"Split\",\"Fill\",\"XOR\",\"Lock\",\"Chain\"],\"default\":0},"
             "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":-63},"
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"

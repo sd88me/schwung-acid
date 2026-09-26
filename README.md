@@ -92,11 +92,15 @@ Two independent generative sequencers, blended into one output, running as a
   **Morph** (each step from A or B), **Split** (rhythm/slide/accent from A,
   pitch from B), **Fill** (A plays; B fills A's rests), **XOR** (plays only
   where exactly one has a note — interlocking, syncopated), **Lock** (plays
-  only where both have a note — sparse and tight).
+  only where both have a note — sparse and tight), **Chain** (call and
+  response: A plays a full pass of its pattern, then B answers with a full
+  pass, and so on — not per step; each restarts from step 1 on its turn).
 - **Blend** (−63…+64) — sweeps A → B using a fixed, evenly-spread per-step
   order, so the hand-over is repeatable rather than random. Morph/Split:
   −63 = A only, +64 = B (Split: all pitches from B). Fill/XOR/Lock: −63 = A
-  alone, centre = the logic result, +64 = B alone. Default −63.
+  alone, centre = the logic result, +64 = B alone. Chain: Blend sets the
+  pass ratio — centre is one pass each, toward −63 / +64 gives that side more
+  passes (up to 8:1), and the extremes are A only / B only. Default −63.
 - **Algo A / Algo B** (1–16) — per sequencer, how much of the secondary
   generator is blended into the primary on the next re-roll. 1 = pure
   tb3po model (density/accent/slide/octave rolls); 16 = mostly the
@@ -190,6 +194,11 @@ scripts/
 
 ## Changelog
 
+- **v1.2.1** — new **Chain** Blend Mode: call and response. A plays a full
+  pass of its pattern, then B answers with a full pass, alternating; Blend
+  sets the pass ratio (centre 1:1, up to 8:1 either way). Use Tune B for the
+  answer's interval. Reset Both restarts the chain from A. Still one
+  monophonic line.
 - **v1.2.0** — **Preset / state save fixed**: Acid now implements the host's
   `state` contract, so Save / Save As and module presets store and recall the
   exact sequence (both patterns and PRNG state) and every parameter, instead

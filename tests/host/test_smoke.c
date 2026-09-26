@@ -156,10 +156,10 @@ int main(void) {
     /* Blend Mode: every mode must stay monophonic -- never two notes sounding
      * at once -- across the whole Blend sweep. */
     {
-        static const char *modes[] = { "0", "1", "2", "3", "4" };
+        static const char *modes[] = { "0", "1", "2", "3", "4", "5" };
         static const char *blends[] = { "-63", "-30", "0", "30", "64" };
         int bad = 0;
-        for (int m = 0; m < 5; m++) for (int b = 0; b < 5; b++) {
+        for (int m = 0; m < 6; m++) for (int b = 0; b < 5; b++) {
             void *bi = api->create_instance(NULL, NULL);
             api->set_param(bi, "blend_mode", modes[m]);
             api->set_param(bi, "blend", blends[b]);
@@ -190,6 +190,39 @@ int main(void) {
         }
         if (bad) g_state_bad = 1;
         else printf("blend modes: monophonic across sweep OK\n");
+    }
+
+    /* Chain: A and B play alternating whole passes. Pitch-separate them (B two
+     * octaves up, one octave each) and check the note stream comes in phrase-
+     * sized blocks -- few A/B switches -- with both sides present. */
+    {
+        void *ci = api->create_instance(NULL, NULL);
+        api->set_param(ci, "blend_mode", "5"); api->set_param(ci, "blend", "0");
+        api->set_param(ci, "a_length", "4"); api->set_param(ci, "b_length", "4");
+        api->set_param(ci, "a_octaves", "1"); api->set_param(ci, "b_octaves", "1");
+        api->set_param(ci, "a_density", "1"); api->set_param(ci, "b_density", "1");
+        api->set_param(ci, "a_generate", "go"); api->set_param(ci, "b_generate", "go");
+        api->set_param(ci, "b_tune", "24");
+        uint8_t om[MIDI_FX_MAX_OUT_MSGS][3]; int ol[MIDI_FX_MAX_OUT_MSGS];
+        uint8_t st = 0xFA; api->process_midi(ci, &st, 1, om, ol, MIDI_FX_MAX_OUT_MSGS);
+        int lo = 0, hi = 0, switches = 0, prev_cls = -1;
+        for (int k = 0; k < 4000; k++) for (int phase = 0; phase < 2; phase++) {
+            uint8_t clk = 0xF8;
+            int c = phase == 0 ? api->process_midi(ci, &clk, 1, om, ol, MIDI_FX_MAX_OUT_MSGS)
+                               : api->tick(ci, 128, 44100, om, ol, MIDI_FX_MAX_OUT_MSGS);
+            for (int q = 0; q < c; q++) if ((om[q][0] & 0xF0) == 0x90 && om[q][2]) {
+                int cls = om[q][1] >= 24 + 9 + 20;  /* base(24)+root(9): A < +12, B >= +24 */
+                if (cls) hi++; else lo++;
+                if (prev_cls >= 0 && cls != prev_cls) switches++;
+                prev_cls = cls;
+            }
+        }
+        /* ~666 steps / 4 per pass = ~166 passes -> ~166 switches; per-step
+         * mixing would give hundreds more. */
+        int ok_chain = lo > 50 && hi > 50 && switches > 60 && switches < 200;
+        printf("chain: lo=%d hi=%d switches=%d %s\n", lo, hi, switches, ok_chain ? "OK" : "BAD");
+        if (!ok_chain) g_state_bad = 1;
+        api->destroy_instance(ci);
     }
 
     /* State round-trip: get_param("state") must reproduce the exact pattern
