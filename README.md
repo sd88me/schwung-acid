@@ -20,15 +20,9 @@ Two independent generative sequencers, blended into one output, running as a
   density/accent/slide/octave model exactly; higher settings blend in a
   second, `Sting`-inspired generator.
 - A MIDI FX slot can only forward to the one synth in that slot, so Sequencer
-  A and B **merge into a single output stream**, mixed by a bipolar **Blend**
-  knob. Unlike a level crossfader, Blend scales each sequence's *own*
-  velocity by a 0–100% multiplier rather than substituting an absolute
-  target velocity, so each sequence's accent/normal-note ratio — a defining
-  feature of acid lines — stays intact no matter where the knob sits: −63 =
-  A at 100% / B at 0%, centre = both at 100%, +64 = A at 0% / B at 100%,
-  with the opposing side ramping linearly between. Defaults to −63 (Seq A
-  alone), so B stays silent until you dial it in — which is also how you
-  switch B off, no separate on/off needed.
+  A and B **merge into a single monophonic output line**, chosen step by
+  step by **Blend Mode** and swept by the bipolar **Blend** knob (see below).
+  Defaults to −63 (Seq A only).
 - **Reset Both** (1/2/4/8 bars, or Off) periodically snaps both sequencers
   back to step 1 together. Off lets differently-lengthed A/B patterns drift
   as a genuine polymeter.
@@ -45,8 +39,8 @@ Two independent generative sequencers, blended into one output, running as a
 |---|---|
 | **SEQUENCE A** (root level) | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
 | **SEQUENCE B** | Generate, Mutate, Density, Accent, Slide, Octaves, Length, Gate |
-| **Global** | Scale, Root, Tune B, Blend, Algo A, Algo B, Reset Both, Swing |
-| **Advanced** | Offset A, Offset B, Jitter, Auto Gen, Direction A, Direction B (6 of 8 slots) |
+| **Global** | Scale, Root, Tune B, Reset Both, Algo A, Algo B, Blend Mode, Blend |
+| **Advanced** | Offset A, Offset B, Jitter, Swing, Auto Gen, Direction A, Direction B (7 of 8 slots) |
 
 ## What each knob does
 
@@ -93,11 +87,16 @@ Two independent generative sequencers, blended into one output, running as a
   sequencers together and the A→B interval you dialled in is preserved.
   Both sequencers still quantise to the same Scale, so B lands on real
   scale degrees of its own transposed key.
-- **Blend** (−63…+64) — velocity balance between the two sequencers merged
-  into the one output. −63 = A only, centre = both at full, +64 = B only,
-  each side scaling the *other* sequencer's own velocities down as the knob
-  travels (so each line keeps its internal accent/normal ratio). Default
-  −63.
+- **Blend Mode** — how A and B merge into one monophonic line, decided per
+  step (the other sequencer is muted, so notes never overlap):
+  **Morph** (each step from A or B), **Split** (rhythm/slide/accent from A,
+  pitch from B), **Fill** (A plays; B fills A's rests), **XOR** (plays only
+  where exactly one has a note — interlocking, syncopated), **Lock** (plays
+  only where both have a note — sparse and tight).
+- **Blend** (−63…+64) — sweeps A → B using a fixed, evenly-spread per-step
+  order, so the hand-over is repeatable rather than random. Morph/Split:
+  −63 = A only, +64 = B (Split: all pitches from B). Fill/XOR/Lock: −63 = A
+  alone, centre = the logic result, +64 = B alone. Default −63.
 - **Algo A / Algo B** (1–16) — per sequencer, how much of the secondary
   generator is blended into the primary on the next re-roll. 1 = pure
   tb3po model (density/accent/slide/octave rolls); 16 = mostly the
@@ -191,6 +190,15 @@ scripts/
 
 ## Changelog
 
+- **v1.2.0** — **Preset / state save fixed**: Acid now implements the host's
+  `state` contract, so Save / Save As and module presets store and recall the
+  exact sequence (both patterns and PRNG state) and every parameter, instead
+  of failing with "could not read module state". New **Blend Mode** (Morph,
+  Split, Fill, XOR, Lock) replaces the old velocity-crossfade Blend, which
+  layered both sequencers into a busy two-voice stack; every mode now
+  outputs one monophonic line. Presets saved before this load as Morph.
+  Page layout: Global is now Scale, Root, Tune B, Reset Both, Algo A/B,
+  Blend Mode, Blend; **Swing moved to Advanced** (knob 4).
 - **v1.1.1** — Offset A / Offset B knob feel: declared as normalised-curve
   floats (like Length A/B and Swing) so they no longer step one value per
   detent across the 0–31 span. No behaviour change.

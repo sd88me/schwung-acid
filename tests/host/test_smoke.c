@@ -22,6 +22,7 @@ static int mock_get_clock_status(void) { return MOVE_CLOCK_STATUS_RUNNING; }
 static int mock_slot_recv_channel(void *instance) { (void)instance; return 0; }
 static void mock_log(const char *msg) { (void)msg; /* silence by default */ }
 
+static int g_state_bad = 0;
 static int g_note_on = 0, g_note_off = 0, g_cc = 0;
 static int g_min_note = 200, g_max_note = -1;
 
@@ -152,6 +153,57 @@ int main(void) {
         for (int m = 0; m < count; m++) observe(out_msgs[m], out_lens[m], i);
     }
 
+    /* Blend Mode: every mode must stay monophonic -- never two notes sounding
+     * at once -- across the whole Blend sweep. */
+    {
+        static const char *modes[] = { "0", "1", "2", "3", "4" };
+        static const char *blends[] = { "-63", "-30", "0", "30", "64" };
+        int bad = 0;
+        for (int m = 0; m < 5; m++) for (int b = 0; b < 5; b++) {
+            void *bi = api->create_instance(NULL, NULL);
+            api->set_param(bi, "blend_mode", modes[m]);
+            api->set_param(bi, "blend", blends[b]);
+            api->set_param(bi, "a_length", "16"); api->set_param(bi, "b_length", "12");
+            api->set_param(bi, "b_tune", "5");
+            int on[128] = {0}, sounding = 0, mx = 0;
+            uint8_t om[MIDI_FX_MAX_OUT_MSGS][3]; int ol[MIDI_FX_MAX_OUT_MSGS];
+            uint8_t st = 0xFA; api->process_midi(bi, &st, 1, om, ol, MIDI_FX_MAX_OUT_MSGS);
+            for (int k = 0; k < 4000; k++) {
+                int c;
+                uint8_t clk = 0xF8;
+                c = api->process_midi(bi, &clk, 1, om, ol, MIDI_FX_MAX_OUT_MSGS);
+                for (int q = 0; q < c; q++) {
+                    if ((om[q][0] & 0xF0) == 0x90 && om[q][2]) { if (!on[om[q][1]]++) sounding++; }
+                    else if ((om[q][0] & 0xF0) == 0x80) { if (on[om[q][1]]) { on[om[q][1]] = 0; sounding--; } }
+                }
+                if (sounding > mx) mx = sounding;
+                c = api->tick(bi, 128, 44100, om, ol, MIDI_FX_MAX_OUT_MSGS);
+                for (int q = 0; q < c; q++) {
+                    if ((om[q][0] & 0xF0) == 0x90 && om[q][2]) { if (!on[om[q][1]]++) sounding++; }
+                    else if ((om[q][0] & 0xF0) == 0x80) { if (on[om[q][1]]) { on[om[q][1]] = 0; sounding--; } }
+                }
+                if (sounding > mx) mx = sounding;
+            }
+            if (mx < 1 && b == 0) { fprintf(stderr, "FAIL: mode %s never sounded\n", modes[m]); bad = 1; }
+            if (mx > 1) { fprintf(stderr, "FAIL: mode %s blend %s reached %d simultaneous notes\n", modes[m], blends[b], mx); bad = 1; }
+            api->destroy_instance(bi);
+        }
+        if (bad) g_state_bad = 1;
+        else printf("blend modes: monophonic across sweep OK\n");
+    }
+
+    /* State round-trip: get_param("state") must reproduce the exact pattern
+     * and knobs on a fresh instance (preset save/recall). */
+    {
+        static char st1[4096], st2[4096];
+        int n1 = api->get_param(inst, "state", st1, sizeof st1);
+        void *inst2 = api->create_instance(NULL, NULL);
+        api->set_param(inst2, "midi_fx1:state", st1);
+        int n2 = api->get_param(inst2, "state", st2, sizeof st2);
+        printf("state len=%d, roundtrip %s\n", n1, (n1 > 0 && n1 == n2 && !strcmp(st1, st2)) ? "OK" : "MISMATCH");
+        if (!(n1 > 0 && n1 == n2 && !strcmp(st1, st2))) g_state_bad = 1;
+    }
+
     api->destroy_instance(inst);
     dlclose(handle);
 
@@ -163,6 +215,8 @@ int main(void) {
     if (g_note_on == 0) { fprintf(stderr, "FAIL: no note-on events at all\n"); ok = 0; }
     if (g_min_note < 0 || g_max_note > 127) { fprintf(stderr, "FAIL: note out of MIDI range\n"); ok = 0; }
     if (g_note_off < g_note_on - 4) { fprintf(stderr, "FAIL: note-off count far below note-on (leaked notes?)\n"); ok = 0; }
+
+    if (g_state_bad) { fprintf(stderr, "FAIL: state round-trip\n"); ok = 0; }
 
     printf(ok ? "\nSMOKE TEST PASSED\n" : "\nSMOKE TEST FAILED\n");
     return ok ? 0 : 1;

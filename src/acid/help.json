@@ -57,8 +57,11 @@
         "semitones (+/-24).",
         "Both still follow",
         "Root and note-in.",
-        "Blend: crossfade A",
-        "<-> B, centre = both.",
+        "Blend Mode: how A/B",
+        "merge to one line:",
+        "Morph, Split, Fill,",
+        "XOR, Lock.",
+        "Blend: sweeps A->B.",
         "Algo A / Algo B:",
         "1-16, blends a 2nd",
         "generator in.",
@@ -67,12 +70,7 @@
         "1/2/4/8 bars, or Off",
         "to let differently-",
         "lengthed patterns",
-        "drift as a polymeter.",
-        "Swing: 50-75%, MPC-",
-        "style 16th feel. 50",
-        "= straight, 66 = a",
-        "triplet, 75 = max.",
-        "Applies to both."
+        "drift as a polymeter."
       ]
     },
     {
@@ -104,6 +102,10 @@
         "repeat, or jump --",
         "perturbs which step,",
         "not the timing.",
+        "Swing: 50-75%, MPC-",
+        "style 16th feel. 50",
+        "= straight, 66 = a",
+        "triplet, 75 = max.",
         "Auto Gen: re-roll",
         "both sequencers every",
         "1-32 bars, or Off."

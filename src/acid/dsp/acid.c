@@ -143,7 +143,8 @@ typedef struct {
                            * separate from `root` so playing notes (or an echo of
                            * our own output) never moves the Root knob/field */
     int scale;            /* index into SCALES */
-    int blend;             /* -63..64, bipolar velocity crossfade A<->B */
+    int blend;             /* -63..64, A<->B sweep; meaning depends on blend_mode */
+    int blend_mode;        /* BM_* -- see blend_pick() */
     int reset_bars_idx;   /* 0..3 -> {1,2,4,8} bars, 4 = Off */
     int swing_pct;         /* 50-75, MPC-style 16th swing; 50 = straight.
                            * Whole percent, but the chain_param below is
@@ -431,35 +432,46 @@ static int next_position(acid_seq_t *s) {
     }
 }
 
-/* Blend scales each sequencer's OWN velocity by a 0-100%
- * multiplier -- it never substitutes in an absolute target velocity. That
- * keeps each sequence's internal accent/normal ratio (118 vs 72, see
- * emit_step_for_seq) intact; only the relative balance between A and B
- * moves. Full CCW (-63) = A at 100%, B at 0%. Centre (0) = both at 100%.
- * Full CW (+64) = A at 0%, B at 100%. Each side only ever pulls down the
- * OPPOSITE sequence -- the "home" side for a given half stays at 100%
- * throughout that half, ramping linearly from 100% to 0% only as the knob
- * crosses from centre to its far extreme. */
-static void compute_blend_velocities(int blend, int *vel_a, int *vel_b) {
-    float va, vb;
-    if (blend <= 0) {
-        float t = (float)(-blend) / 63.0f; /* 0 at centre .. 1 at -63 */
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
-        va = 127.0f;              /* A stays full on this half */
-        vb = 127.0f * (1.0f - t); /* B ramps 100% -> 0% */
-    } else {
-        float t = (float)blend / 64.0f; /* 0 at centre .. 1 at +64 */
-        if (t > 1.0f) t = 1.0f;
-        va = 127.0f * (1.0f - t); /* A ramps 100% -> 0% */
-        vb = 127.0f;               /* B stays full on this half */
+/* Blend Mode -- every mode keeps the output a single monophonic line by
+ * deciding, per step, WHICH sequencer is audible (the other is muted, which
+ * also kills its ringing note). Blend then sweeps w = 0 (A alone) .. 1 (B
+ * alone) using a fixed per-step threshold (a bit-reversed 16-step order) so
+ * the hand-over between sources is even and repeatable, never random.
+ *   Morph -- each step comes from A or B.
+ *   Split -- rhythm (note/rest/slide/accent) always from A; pitch from B
+ *            on the steps the threshold hands to B.
+ *   Fill  -- OR, A priority: B plays where A rests.
+ *   XOR   -- plays where exactly one of A/B has a note.
+ *   Lock  -- AND: plays (A's note) only where both have a note.
+ * The logic modes sweep A -> logic result (centre) -> B. */
+enum { BM_MORPH = 0, BM_SPLIT, BM_FILL, BM_XOR, BM_LOCK, NUM_BLEND_MODES };
+
+static const uint8_t BLEND_THRESH[16] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
+
+/* Decide the audible sequencer for this step: 0 = A, 1 = B, -1 = silence.
+ * gate_a/gate_b: does that sequencer have a note on this step. *pitch_from_b
+ * is set only for Split. */
+static int blend_pick(const acid_inst_t *t, int gate_a, int gate_b, int *pitch_from_b) {
+    float w = (float)(t->blend + 63) / 127.0f;
+    if (w < 0.0f) w = 0.0f;
+    if (w > 1.0f) w = 1.0f;
+    float thr = ((float)BLEND_THRESH[t->swing_pulse_idx & 15] + 0.5f) / 16.0f;
+    *pitch_from_b = 0;
+
+    if (t->blend_mode == BM_MORPH) return (thr < w) ? 1 : 0;
+    if (t->blend_mode == BM_SPLIT) { *pitch_from_b = (thr < w); return 0; }
+
+    /* Logic modes: three-way source A / result / B. */
+    int src; /* 0 = A alone, 1 = logic result, 2 = B alone */
+    if (w < 0.5f) src = (thr < w * 2.0f) ? 1 : 0;
+    else          src = (thr < (w - 0.5f) * 2.0f) ? 2 : 1;
+    if (src == 0) return gate_a ? 0 : -1;
+    if (src == 2) return gate_b ? 1 : -1;
+    switch (t->blend_mode) {
+        case BM_FILL: return gate_a ? 0 : (gate_b ? 1 : -1);
+        case BM_XOR:  return (gate_a && !gate_b) ? 0 : ((gate_b && !gate_a) ? 1 : -1);
+        default:      return (gate_a && gate_b) ? 0 : -1; /* Lock */
     }
-    *vel_a = (int)(va + 0.5f);
-    *vel_b = (int)(vb + 0.5f);
-    if (*vel_a < 0) *vel_a = 0;
-    if (*vel_a > 127) *vel_a = 127;
-    if (*vel_b < 0) *vel_b = 0;
-    if (*vel_b > 127) *vel_b = 127;
 }
 
 static void recompute_step_length(acid_inst_t *t, int sample_rate) {
@@ -528,12 +540,11 @@ static int kill_all_notes(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[],
 }
 
 /* Emits (or silences) one sequencer's current step. vel_scale (0-127) is
- * this sequencer's Blend-derived level; the step's own accent/normal
- * velocity is scaled by it, so Blend acts as an overall mix level per
- * generator rather than overriding accent dynamics. vel_scale == 0 mutes
- * the sequencer outright for this step (true "only" semantics at the
- * Blend extremes, not just quiet). */
-static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int prev_pos, int vel_scale,
+ * 127 when Blend Mode has made this sequencer audible for the step and 0
+ * when it hasn't (which mutes it outright and kills its ringing note).
+ * Rhythm/kind/slide come from seq_idx; pitch comes from pitch_seq (== seq_idx
+ * except in Split mode). */
+static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int pitch_seq, int prev_pos, int vel_scale,
                               uint8_t out_msgs[][3], int out_lens[], int max_out) {
     acid_seq_t *s = &t->seq[seq_idx];
     int count = 0;
@@ -546,7 +557,8 @@ static int emit_step_for_seq(acid_inst_t *t, int seq_idx, int prev_pos, int vel_
         return count;
     }
 
-    int note = note_for_step(s, t->scale, t->root, t->live_transpose, pidx);
+    const acid_seq_t *ps = &t->seq[pitch_seq];
+    int note = note_for_step(ps, t->scale, t->root, t->live_transpose, play_idx(ps, ps->position));
     int is_accent = (kind == STEP_ACCENT);
     int base_vel = is_accent ? 118 : 72;
     int vel = (base_vel * vel_scale) / 127;
@@ -628,12 +640,10 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
         t->auto_gen_step_count = 0;
     }
 
-    int vel_a, vel_b;
-    compute_blend_velocities(t->blend, &vel_a, &vel_b);
-
+    int prev[NUM_SEQS];
     for (int i = 0; i < NUM_SEQS; i++) {
         acid_seq_t *s = &t->seq[i];
-        int prev = s->position;
+        prev[i] = s->position;
         if (forced_reset) {
             s->position = 0;
             s->pendulum_fwd = 1;  /* Reset Both is authoritative -- pendulum resumes forward */
@@ -650,7 +660,7 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
                 rng_next_f(&s->rng) < t->jitter) {
                 switch (rng_next_u32(&s->rng) % 3u) {
                     case 0: np = (np + 1) % s->length; break;
-                    case 1: np = prev; break;
+                    case 1: np = prev[i]; break;
                     default: {
                         int r = (int)(rng_next_f(&s->rng) * (float)s->length);
                         if (r >= s->length) r = s->length - 1;
@@ -660,9 +670,25 @@ static int advance_all(acid_inst_t *t, uint8_t out_msgs[][3], int out_lens[], in
             }
             s->position = np;
         }
-        int vel_scale = (i == SEQ_A) ? vel_a : vel_b;
-        if (count < max_out) {
-            count += emit_step_for_seq(t, i, prev, vel_scale, &out_msgs[count], &out_lens[count], max_out - count);
+    }
+
+    /* Both positions are settled, so Blend Mode can see both steps. */
+    int gate_a = t->seq[SEQ_A].steps[play_idx(&t->seq[SEQ_A], t->seq[SEQ_A].position)] != STEP_REST;
+    int gate_b = t->seq[SEQ_B].steps[play_idx(&t->seq[SEQ_B], t->seq[SEQ_B].position)] != STEP_REST;
+    int pitch_from_b;
+    int pick = blend_pick(t, gate_a, gate_b, &pitch_from_b);
+
+    /* Muted sequencer first, so its note-off can never land after (and cut)
+     * the audible sequencer's note-on when both share a pitch. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < NUM_SEQS; i++) {
+            int audible = (i == pick) || (t->blend_mode == BM_SPLIT && i == SEQ_A);
+            if ((pass == 0) == audible) continue;
+            int pitch_seq = (i == SEQ_A && pitch_from_b) ? SEQ_B : i;
+            if (count < max_out) {
+                count += emit_step_for_seq(t, i, pitch_seq, prev[i], audible ? 127 : 0,
+                                           &out_msgs[count], &out_lens[count], max_out - count);
+            }
         }
     }
     return count;
@@ -890,9 +916,14 @@ static float parse_float(const char *s, float fallback) {
     return (float)strtod(s, NULL);
 }
 
+static int is_state_key(const char *key);
+static void state_decode(acid_inst_t *t, const char *val);
+
 static void acid_set_param(void *instance, const char *key, const char *val) {
     acid_inst_t *t = (acid_inst_t *)instance;
     if (!t || !key) return;
+
+    if (is_state_key(key)) { state_decode(t, val); return; }
 
     int seq_idx = -1;
     const char *k = key;
@@ -980,6 +1011,8 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
         if (v < -63) v = -63;
         if (v > 64) v = 64;
         t->blend = v;
+    } else if (strcmp(key, "blend_mode") == 0) {
+        int v = parse_int(val, 0); if (v < 0 || v >= NUM_BLEND_MODES) v = 0; t->blend_mode = v;
     } else if (strcmp(key, "reset_bars") == 0) {
         int v = parse_int(val, 4); if (v < 0 || v > 4) v = 4;
         t->reset_bars_idx = v;
@@ -1006,9 +1039,125 @@ static void acid_set_param(void *instance, const char *key, const char *val) {
     }
 }
 
+
+/* ---- Preset/autosave state ------------------------------------------------
+ * Full, self-contained text blob: shared knobs, then per sequencer its knobs,
+ * PRNG state and the literal pattern (hex), so recall reproduces the exact
+ * sequence rather than regenerating one. Flat "v1;k=v;..." -- no nesting. */
+static int is_state_key(const char *key) {
+    size_t n = strlen(key);
+    return strcmp(key, "state") == 0 || (n > 6 && strcmp(key + n - 6, ":state") == 0);
+}
+
+static int hex_put(char *o, size_t cap, const uint8_t *a, int n) {
+    static const char H[] = "0123456789abcdef";
+    if ((size_t)(2 * n + 1) > cap) return -1;
+    for (int i = 0; i < n; i++) { o[2*i] = H[a[i] >> 4]; o[2*i+1] = H[a[i] & 15]; }
+    o[2*n] = 0;
+    return 2 * n;
+}
+
+static int hex_get(const char *h, uint8_t *a, int n) {
+    for (int i = 0; i < n; i++) {
+        unsigned v;
+        char b[3] = { h[2*i], h[2*i] ? h[2*i+1] : 0, 0 };
+        if (!b[0] || !b[1] || sscanf(b, "%2x", &v) != 1) return -1;
+        a[i] = (uint8_t)v;
+    }
+    return 0;
+}
+
+static int state_encode(const acid_inst_t *t, char *buf, int cap) {
+    int n = snprintf(buf, cap, "v1;root=%d;scale=%d;blend=%d;bm=%d;rb=%d;sw=%d;jit=%.3f;ag=%d",
+                     t->root, t->scale, t->blend, t->blend_mode, t->reset_bars_idx, t->swing_pct,
+                     t->jitter, t->auto_gen_idx);
+    for (int i = 0; i < NUM_SEQS && n > 0 && n < cap; i++) {
+        const acid_seq_t *s = &t->seq[i];
+        n += snprintf(buf + n, cap - n,
+                      ";%c=%.3f,%.3f,%.3f,%d,%d,%.3f,%d,%d,%d,%d,%u,%u,",
+                      'a' + i, s->density, s->accent, s->slide, s->octave_range,
+                      s->length, s->gate, s->algo, s->tune, s->offset, s->dir,
+                      (unsigned)s->rng, (unsigned)s->seed);
+        if (n >= cap) return -1;
+        int h;
+        if ((h = hex_put(buf + n, cap - n, s->steps, MAX_STEPS)) < 0) return -1;
+        n += h;
+        buf[n++] = ',';
+        if (n >= cap) return -1;
+        if ((h = hex_put(buf + n, cap - n, s->degrees, MAX_STEPS)) < 0) return -1;
+        n += h;
+        buf[n++] = ',';
+        if (n >= cap) return -1;
+        if ((h = hex_put(buf + n, cap - n, s->octaves, MAX_STEPS)) < 0) return -1;
+        n += h;
+    }
+    return (n > 0 && n < cap) ? n : -1;
+}
+
+static void state_decode(acid_inst_t *t, const char *val) {
+    if (!val || strncmp(val, "v1;", 3) != 0) return;
+    const char *p = val + 3;
+    while (*p) {
+        const char *e = strchr(p, ';');
+        size_t len = e ? (size_t)(e - p) : strlen(p);
+        char tok[512];
+        if (len < sizeof(tok)) {
+            memcpy(tok, p, len); tok[len] = 0;
+            if (tok[0] >= 'a' && tok[0] <= 'b' && tok[1] == '=') {
+                acid_seq_t *s = &t->seq[tok[0] - 'a'];
+                float d, a, sl, g, fl = 0; int oc, ln, al, tu, of, dr; unsigned rn, sd; int used = 0;
+                if (sscanf(tok + 2, "%f,%f,%f,%d,%d,%f,%d,%d,%d,%d,%u,%u,%n",
+                           &d, &a, &sl, &oc, &ln, &g, &al, &tu, &of, &dr, &rn, &sd, &used) >= 12 && used) {
+                    (void)fl;
+                    uint8_t st[MAX_STEPS], dg[MAX_STEPS], ov[MAX_STEPS];
+                    const char *h = tok + 2 + used;
+                    size_t hl = 2 * MAX_STEPS;
+                    if (strlen(h) >= 3 * hl + 2 && h[hl] == ',' && h[2*hl+1] == ',' &&
+                        hex_get(h, st, MAX_STEPS) == 0 &&
+                        hex_get(h + hl + 1, dg, MAX_STEPS) == 0 &&
+                        hex_get(h + 2*hl + 2, ov, MAX_STEPS) == 0) {
+                        memcpy(s->steps, st, MAX_STEPS);
+                        memcpy(s->degrees, dg, MAX_STEPS);
+                        memcpy(s->octaves, ov, MAX_STEPS);
+                        s->density = d < 0 ? 0 : d > 1 ? 1 : d;
+                        s->accent = a < 0 ? 0 : a > 1 ? 1 : a;
+                        s->slide = sl < 0 ? 0 : sl > 1 ? 1 : sl;
+                        s->octave_range = oc < 1 ? 1 : oc > 3 ? 3 : oc;
+                        s->length = ln < MIN_LENGTH ? MIN_LENGTH : ln > MAX_STEPS ? MAX_STEPS : ln;
+                        s->gate = g < 0.05f ? 0.05f : g > 1 ? 1 : g;
+                        s->algo = al < 1 ? 1 : al > 16 ? 16 : al;
+                        s->tune = tu < -ACID_MAX_TUNE ? -ACID_MAX_TUNE : tu > ACID_MAX_TUNE ? ACID_MAX_TUNE : tu;
+                        s->offset = of < 0 ? 0 : of >= s->length ? s->length - 1 : of;
+                        s->dir = dr < 0 ? 0 : dr > 2 ? 2 : dr;
+                        s->rng = rn ? rn : 1u; s->seed = sd;
+                        if (s->position >= s->length) s->position = s->length - 1;
+                    }
+                }
+            } else {
+                char *k = tok; char *eq = strchr(tok, '=');
+                if (eq) {
+                    *eq = 0;
+                    if (!strcmp(k, "root")) acid_set_param(t, "root", eq + 1);
+                    else if (!strcmp(k, "scale")) acid_set_param(t, "scale", eq + 1);
+                    else if (!strcmp(k, "blend")) acid_set_param(t, "blend", eq + 1);
+                    else if (!strcmp(k, "bm")) acid_set_param(t, "blend_mode", eq + 1);
+                    else if (!strcmp(k, "rb")) acid_set_param(t, "reset_bars", eq + 1);
+                    else if (!strcmp(k, "sw")) acid_set_param(t, "swing", eq + 1);
+                    else if (!strcmp(k, "jit")) acid_set_param(t, "jitter", eq + 1);
+                    else if (!strcmp(k, "ag")) acid_set_param(t, "auto_gen", eq + 1);
+                }
+            }
+        }
+        if (!e) break;
+        p = e + 1;
+    }
+}
+
 static int acid_get_param(void *instance, const char *key, char *buf, int buf_len) {
     acid_inst_t *t = (acid_inst_t *)instance;
     if (!t || !key || !buf || buf_len < 2) return -1;
+
+    if (strcmp(key, "state") == 0) return state_encode(t, buf, buf_len);
 
     int seq_idx = -1;
     const char *k = key;
@@ -1039,6 +1188,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
     if (strcmp(key, "root") == 0) n = snprintf(buf, buf_len, "%d", t->root);
     else if (strcmp(key, "scale") == 0) n = snprintf(buf, buf_len, "%d", t->scale);
     else if (strcmp(key, "blend") == 0) n = snprintf(buf, buf_len, "%d", t->blend);
+    else if (strcmp(key, "blend_mode") == 0) n = snprintf(buf, buf_len, "%d", t->blend_mode);
     else if (strcmp(key, "reset_bars") == 0) n = snprintf(buf, buf_len, "%d", t->reset_bars_idx);
     else if (strcmp(key, "swing") == 0) n = snprintf(buf, buf_len, "%d", t->swing_pct);
     else if (strcmp(key, "jitter") == 0) n = snprintf(buf, buf_len, "%.3f", t->jitter);
@@ -1072,6 +1222,7 @@ static int acid_get_param(void *instance, const char *key, char *buf, int buf_le
             "{\"key\":\"scale\",\"name\":\"Scale\",\"type\":\"enum\",\"options\":[\"Minor\",\"Phrygian\",\"HarmMinor\",\"MinPent\",\"Dorian\",\"Major\",\"PhrygDom\",\"Locrian\",\"WholeTone\",\"HungMinor\",\"MinBlues\",\"Chromatic\"],\"default\":0},"
             "{\"key\":\"root\",\"name\":\"Root\",\"type\":\"enum\",\"options\":[\"C\",\"C#\",\"D\",\"D#\",\"E\",\"F\",\"F#\",\"G\",\"G#\",\"A\",\"A#\",\"B\"],\"default\":9},"
             "{\"key\":\"b_tune\",\"name\":\"Tune B\",\"type\":\"int\",\"min\":-24,\"max\":24,\"step\":1,\"default\":0},"
+            "{\"key\":\"blend_mode\",\"name\":\"Blend Mode\",\"type\":\"enum\",\"options\":[\"Morph\",\"Split\",\"Fill\",\"XOR\",\"Lock\"],\"default\":0},"
             "{\"key\":\"blend\",\"name\":\"Blend\",\"type\":\"int\",\"min\":-63,\"max\":64,\"step\":1,\"default\":-63},"
             "{\"key\":\"a_algo\",\"name\":\"Algo A\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
             "{\"key\":\"b_algo\",\"name\":\"Algo B\",\"type\":\"int\",\"min\":1,\"max\":16,\"step\":1,\"default\":1},"
