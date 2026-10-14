@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <math.h>
 #include "plugin_api_v1.h"
 #include "midi_fx_api_v1.h"
 
@@ -43,6 +44,24 @@ static void observe(const uint8_t msg[3], int len, long tick_idx) {
     } else {
         printf("[%6ld] other    %02x %02x %02x\n", tick_idx, msg[0], msg[1], msg[2]);
     }
+}
+
+/* Reads one sequencer's 32 step kinds (and 32 lock flags) back out of the state blob. */
+static int read_steps(const midi_fx_api_v1_t *api, void *inst, char seq, uint8_t steps[32], uint8_t locks[32]) {
+    static char st[4096];
+    if (api->get_param(inst, "state", st, sizeof st) <= 0) return -1;
+    char key[4] = { ';', seq, '=', 0 };
+    char *t = strstr(st, key);
+    if (!t) return -1;
+    char *e = strchr(t + 1, ';'); size_t end = e ? (size_t)(e - st) : strlen(st);
+    size_t sx = end - (4 * 64 + 3), lx = end - 64;
+    for (int i = 0; i < 32; i++) {
+        unsigned v; char b[3] = { st[sx + 2*i], st[sx + 2*i + 1], 0 };
+        sscanf(b, "%2x", &v); steps[i] = (uint8_t)v;
+        char c[3] = { st[lx + 2*i], st[lx + 2*i + 1], 0 };
+        sscanf(c, "%2x", &v); locks[i] = (uint8_t)v;
+    }
+    return 0;
 }
 
 int main(void) {
@@ -235,6 +254,55 @@ int main(void) {
         int n2 = api->get_param(inst2, "state", st2, sizeof st2);
         printf("state len=%d, roundtrip %s\n", n1, (n1 > 0 && n1 == n2 && !strcmp(st1, st2)) ? "OK" : "MISMATCH");
         if (!(n1 > 0 && n1 == n2 && !strcmp(st1, st2))) g_state_bad = 1;
+    }
+
+    /* Engine fixes: the share of steps that play follows Density on both generators, the knobs reshape the
+     * same pattern live (returning a knob restores it exactly), accent and slide can land on one step,
+     * and mutated steps survive knob moves. */
+    {
+        int bad = 0;
+        void *g = api->create_instance(NULL, NULL);
+        const char *algos[2] = { "1", "16" };
+        for (int al = 0; al < 2; al++)
+            for (int d = 1; d <= 3; d++) {
+                char dv[16]; snprintf(dv, sizeof dv, "%.2f", d * 0.25f);
+                api->set_param(g, "a_length", "16"); api->set_param(g, "a_algo", algos[al]); api->set_param(g, "a_density", dv);
+                double total = 0;
+                for (int n = 0; n < 60; n++) {
+                    uint8_t st[32], lk[32];
+                    api->set_param(g, "a_generate", "1"); read_steps(api, g, 'a', st, lk);
+                    for (int i = 0; i < 16; i++) total += st[i] != 0;
+                }
+                printf("density: algo %s knob %s -> %.1f of 16 steps play\n", algos[al], dv, total / 60);
+                if (fabs(total / 60 - d * 4.0) > 3.0) { printf("FAIL density not following the knob\n"); bad = 1; }
+            }
+        uint8_t p0[32], p1[32], lk[32];
+        api->set_param(g, "a_algo", "8"); api->set_param(g, "a_density", "0.5"); api->set_param(g, "a_generate", "1");
+        read_steps(api, g, 'a', p0, lk);
+        api->set_param(g, "a_density", "0.9"); api->set_param(g, "a_slide", "0.8"); api->set_param(g, "a_density", "0.5"); api->set_param(g, "a_slide", "0.25");
+        read_steps(api, g, 'a', p1, lk);
+        printf("live knobs: pattern after moving density/slide away and back %s\n", memcmp(p0, p1, 16) ? "DIFFERS" : "restored");
+        if (memcmp(p0, p1, 16)) { printf("FAIL knobs did not restore the pattern\n"); bad = 1; }
+        int both = 0;
+        api->set_param(g, "a_density", "1.0"); api->set_param(g, "a_accent", "1.0"); api->set_param(g, "a_slide", "1.0");
+        read_steps(api, g, 'a', p1, lk);
+        for (int i = 0; i < 16; i++) both += p1[i] == 4;
+        printf("accent+slide: %d of 16 steps carry both\n", both);
+        if (!both) { printf("FAIL accent and slide never land on one step\n"); bad = 1; }
+        api->set_param(g, "a_accent", "0.4"); api->set_param(g, "a_slide", "0.25"); api->set_param(g, "a_density", "0.7");
+        api->set_param(g, "a_mutate", "1"); read_steps(api, g, 'a', p0, lk);
+        int locked = 0; for (int i = 0; i < 16; i++) locked += lk[i] != 0;
+        api->set_param(g, "a_density", "0.3"); api->set_param(g, "a_octaves", "3"); read_steps(api, g, 'a', p1, lk);
+        int kept = 1; for (int i = 0; i < 16; i++) if (lk[i] && p0[i] != p1[i]) kept = 0;
+        printf("mutate: %d steps locked, kept through knob moves: %s\n", locked, kept ? "yes" : "NO");
+        if (!locked || !kept) { printf("FAIL mutated steps not kept\n"); bad = 1; }
+        void *g2 = api->create_instance(NULL, NULL);
+        uint8_t q0[32], q1[32];
+        read_steps(api, g, 'b', q0, lk); read_steps(api, g2, 'b', q1, lk);
+        printf("new instances start %s\n", memcmp(q0, q1, 16) ? "from different patterns" : "from the same pattern");
+        if (!memcmp(q0, q1, 16)) { printf("FAIL new instances start identical\n"); bad = 1; }
+        api->destroy_instance(g2); api->destroy_instance(g);
+        if (bad) g_state_bad = 1;
     }
 
     api->destroy_instance(inst);

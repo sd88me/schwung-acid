@@ -47,22 +47,24 @@ Two independent generative sequencers, blended into one output, running as a
 ### SEQUENCE A / SEQUENCE B (one identical set per sequencer)
 
 - **Generate** — turn it to re-roll that sequencer's whole pattern from a
-  fresh random seed. Density / Accent / Slide / Octaves / Algo are read at
-  this moment, so they shape *the next* re-roll, not the pattern already
-  playing.
+  fresh random seed. Turning Density / Accent / Slide / Octaves / Algo / Length
+  or Scale afterwards reshapes the *same* pattern live (see below), so you can
+  sweep them without losing its character; only Generate picks a new seed.
 - **Mutate** — turn it to nudge ~25 % of the steps in place (rest↔note,
   re-pick degree/octave) without a full re-roll. Uses Density / Accent /
   Slide / Octaves but not Algo. Keeps the pattern recognisable while it
   drifts; repeated Mutates keep evolving.
 - **Density** (0–100 %) — chance that any given step is a note rather than a
-  rest. Low = sparse, high = every step fires. Applied on Generate/Mutate.
+  rest. Low = sparse, high = every step fires. Live: the pattern follows the
+  knob evenly on both generators.
 - **Accent** (0–100 %) — chance a note is accented (velocity 118 vs the
-  normal 72). Applied on Generate/Mutate.
+  normal 72). Live.
 - **Slide** (0–100 %) — chance a note slides into the next step: it holds
   through the step boundary and sends portamento (CC 65), 303-style. A
-  slide into a rest is demoted to a plain note. Applied on Generate/Mutate.
+  slide into a rest is demoted to a plain note. Accent and slide are rolled
+  independently, so one step can have both. Live.
 - **Octaves** (1–3) — how many octaves above the root the pattern's pitches
-  may span. Applied on Generate/Mutate.
+  may span. Live.
 - **Length** (2–32) — number of steps before the pattern loops. Takes
   effect immediately (the loop point moves); Generate to fill the new
   span with fresh steps.
@@ -193,6 +195,22 @@ scripts/
 ```
 
 ## Changelog
+
+- **v1.3.0** — **Live knobs**: every step now draws the same random numbers
+  whether or not it plays, so a seed gives each step fixed "rolls" and
+  Density / Accent / Slide / Octaves / Algo / Length / Scale only move
+  thresholds against them. Turning a knob reshapes the same pattern instead of
+  waiting for the next Generate, and returning a knob restores the exact
+  pattern. Mutated steps are locked and keep what they have; Generate and Auto
+  Gen clear the locks. **Density now follows the knob evenly on the second
+  generator** (CakeWalk used to fill almost every step from about a quarter of
+  the way up). **Accent and slide can share a step** (before, a slide
+  overwrote the accent). **Each new instance starts from a fresh random
+  pattern** instead of the same fixed one. A given seed now gives a different
+  pattern than 1.2.x (Algo 1 is still the tb3po model, but the random stream
+  is consumed per step, so it no longer matches tb3po seed for seed). Saved
+  states from 1.2.x load fine; the state gains a trailing lock field that
+  older builds ignore.
 
 - **v1.2.0** — **Preset / state save fixed**: Acid now implements the host's
   `state` contract, so Save / Save As and module presets store and recall the
